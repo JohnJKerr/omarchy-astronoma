@@ -145,7 +145,14 @@ Item {
     }
 
     onSummaryFinished: function(payload) {
-      if (payload && payload.ok) detailService.load(detailService.loadedId)
+      if (payload && payload.ok) {
+        root.confirmingAgentEnable = false
+        // Consent is exposed by the list service while the summary runs on
+        // the detail service. Refresh both so the button changes immediately
+        // without waiting for the shell to restart.
+        service.refresh(false)
+        detailService.load(detailService.loadedId)
+      }
       else root.summaryError = payload && payload.error ? payload.error : "The agent did not return a summary"
     }
   }
