@@ -247,6 +247,15 @@ omarchy plugin validate .                    # manifest against the schema
 ./install.sh && omarchy-restart-shell        # install and reload
 ```
 
+**Editing `BarWidget.qml` needs a shell restart, not just a reload.** Saving
+under `~/.config/omarchy/plugins/` hot-reloads panels and overlays, and the
+shell logs "Local plugin changed, reloading" — but bar widgets are exempt:
+`syncPluginWidgets` reuses the existing `Component` whenever the entry point
+URL is unchanged and only refreshes its metadata. So the bar keeps running
+the QML it first loaded, and a changed default or colour appears to have no
+effect. `omarchy-restart-shell` is what picks it up. `Flightlog.qml` does
+hot-reload normally.
+
 To lint the QML, note that Arch keeps Qt 6's tools off `PATH`, and that the
 shell's modules are imported as `qs.*` — so the import path has to be a
 directory *containing* a `qs` entry, not the shell directory itself:
