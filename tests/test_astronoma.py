@@ -556,6 +556,37 @@ class InstallationTests(unittest.TestCase):
             consent = json.loads((Path(temporary) / "state" / "agent-consent.json").read_text())
             self.assertEqual(consent, {"enabled": True})
 
+    def test_install_from_another_directory_still_copies_the_qml(self):
+        # Run from anywhere but the checkout: a relative `./*.qml` in the copy
+        # list globs against the caller's directory and quietly installs a
+        # plugin with no entry points.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            elsewhere = Path(temporary) / "elsewhere"
+            elsewhere.mkdir()
+            env = {
+                **os.environ,
+                "XDG_CONFIG_HOME": str(Path(temporary) / "config"),
+                "ASTRONOMA_STATE_DIR": str(Path(temporary) / "state"),
+                "ASTRONOMA_CACHE_DIR": str(Path(temporary) / "cache"),
+                "ASTRONOMA_PACMAN_LOG": str(Path(temporary) / "absent-pacman.log"),
+                "ASTRONOMA_UPDATE_LOG": str(Path(temporary) / "absent-update.log"),
+                # The install's own capture run would otherwise write fresh
+                # bytecode; suppressing it leaves any __pycache__ found below
+                # as proof the checkout's stale copy was installed.
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
+            subprocess.run(
+                [root / "install.sh", "--no-enable"],
+                cwd=elsewhere, env=env, check=True, capture_output=True, text=True,
+            )
+            installed = (Path(temporary) / "config" / "omarchy" / "plugins"
+                         / "astronoma.updates")
+            for required in ("manifest.json", "BarWidget.qml", "Flightlog.qml",
+                             "Model.js", "Service.qml", "bin/astronoma"):
+                self.assertTrue((installed / required).is_file(), required)
+            self.assertEqual(list(installed.rglob("__pycache__")), [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
