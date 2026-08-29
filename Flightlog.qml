@@ -500,7 +500,10 @@ Item {
                     font.pixelSize: Style.font.bodySmall
                     textFormat: Text.MarkdownText
                     wrapMode: Text.WordWrap
-                    onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                    onLinkActivated: function(link) {
+                      var safe = Model.safeExternalUrl(link)
+                      if (safe) Qt.openUrlExternally(safe)
+                    }
                   }
 
                   Text {
@@ -581,7 +584,10 @@ Item {
                         font.pixelSize: Style.font.bodySmall
                         textFormat: Text.MarkdownText
                         wrapMode: Text.WordWrap
-                        onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                        onLinkActivated: function(link) {
+                          var safe = Model.safeExternalUrl(link)
+                          if (safe) Qt.openUrlExternally(safe)
+                        }
                       }
                     }
                   }

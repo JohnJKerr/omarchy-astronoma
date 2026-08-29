@@ -188,3 +188,10 @@ function statusNote(status) {
   if (status.stale) return "Showing cached release notes"
   return ""
 }
+
+// Markdown comes from GitHub releases and optional agent output. Never hand
+// local-file or custom application schemes to the desktop URL dispatcher.
+function safeExternalUrl(link) {
+  var value = String(link || "")
+  return /^https:\/\//i.test(value) ? value : ""
+}
