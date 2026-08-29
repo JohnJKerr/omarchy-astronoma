@@ -109,11 +109,20 @@ Panel {
     bar: root.bar
     text: ""
     fontSize: Style.font.icon
-    // Accent while unread, so the rocket reads as "new" at a glance even
-    // when the widget is pinned permanently.
+    // Accent while unread, muted once read. An update landing is news, not a
+    // fault, so this deliberately avoids the bar's urgent colour and leaves
+    // red to mean what it means everywhere else here: the errors section,
+    // which has its own claim on the reader's alarm.
+    //
+    // Muting the read state is also what makes a plain `Color.accent` safe.
+    // Accent falls back to the same value as foreground on a theme that never
+    // sets it, so accent-against-foreground could be two identical colours;
+    // accent-against-muted separates either way — 2.78:1 unthemed, 1.78:1 on
+    // a theme that sets both.
     active: service.hasUnread
     useActiveColor: true
-    activeColor: Color.bar.active
+    activeColor: Color.accent
+    foreground: Color.muted
     tooltipText: root.latest ? root.headline : "Astronoma"
     onPressed: function(pressedButton) {
       if (pressedButton === Qt.RightButton) root.openFlightlog()

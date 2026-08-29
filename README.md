@@ -118,9 +118,11 @@ directory does not hot-reload, and the shell will keep running stale QML.
 ## Opening it
 
 The rocket is in the bar by default: click it for the summary card,
-right-click for the full flight log. It is accent-coloured while an update
-you have not opened is waiting, and returns to the bar's normal foreground
-once you have read it.
+right-click for the full flight log. It takes the theme's accent colour
+while an update you have not opened is waiting, and sits muted once you have
+read it — an update landing is news, not a fault, so it deliberately does not
+use the bar's urgent colour. Red is left to mean errors, which have their own
+section in the card.
 
 If you set `visibility` to `"unread"` the rocket leaves the bar entirely
 once an update has been read. The flight log is still loaded and reachable:
