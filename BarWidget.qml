@@ -50,8 +50,7 @@ Panel {
     ? Model.highlights(latest.crossed || [], 4)
     : Model.highlights(service.recentReleases, 4)
   readonly property string statusNote: Model.statusNote(service.releaseStatus)
-  readonly property string summaryText: latest && latest.summary && latest.summary.text
-    ? Model.neutraliseCode(String(latest.summary.text)) : ""
+  readonly property bool hasSummary: !!(latest && latest.summary && latest.summary.text)
   property bool confirmingAgentEnable: false
   property string summaryError: ""
 
@@ -288,38 +287,6 @@ Panel {
 
           PanelSeparator { foreground: root.foreground }
 
-          // The summary answers the card's own question, so it belongs here
-          // rather than behind a button that only forwards to the flight log.
-          Column {
-            visible: root.summaryText !== ""
-            width: parent.width
-            spacing: Style.space(5)
-
-            PanelSectionHeader {
-              text: "WHAT THIS MEANS FOR YOU"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Text {
-              width: parent.width
-              text: root.summaryText
-              color: Qt.darker(root.foreground, 1.15)
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              textFormat: Text.MarkdownText
-              wrapMode: Text.WordWrap
-              // The card is a glance, not the document. Past this the flight
-              // log is the better surface, and it is one button away.
-              maximumLineCount: 14
-              elide: Text.ElideRight
-              onLinkActivated: function(link) {
-                var safe = Model.safeExternalUrl(link)
-                if (safe) Qt.openUrlExternally(safe)
-              }
-            }
-          }
-
           Text {
             visible: root.summaryError !== ""
             width: parent.width
@@ -330,14 +297,15 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
-          // Only shown when pressing it would actually do something: produce a
-          // summary, or take the consent needed to. Once one exists it is
-          // rendered above, and the flight log button below is the only way on
-          // — two buttons that both just opened the flight log read as a
-          // duplicate, because that is what they were.
+          // Present only when an agent is actually installed — the panel must
+          // not advertise something this machine cannot do — and only while
+          // pressing it would do something: produce a summary, or take the
+          // consent needed to. Once one exists, reading it is what the flight
+          // log button below already does, and a second button pointing at the
+          // same place is just a duplicate link.
           Button {
             id: summariseAction
-            visible: service.hasAgent && !!root.latest && root.summaryText === ""
+            visible: service.hasAgent && !!root.latest && !root.hasSummary
             width: parent.width
             bordered: true
             foreground: root.foreground
@@ -390,12 +358,11 @@ Panel {
     target: service
     function onSummaryFinished(payload) {
       if (payload && payload.ok) {
-        // The refresh Service runs on success folds the summary into the
-        // report, so it appears in the card. Jumping to the flight log here
-        // used to be the only way to see the result of a button press on
-        // this surface.
+        // The card does not render summaries, so the flight log is where the
+        // thing just produced can actually be read.
         root.confirmingAgentEnable = false
         root.summaryError = ""
+        root.openFlightlog()
       } else {
         // Previously silent: a failed summarise closed nothing, showed
         // nothing, and left the button looking untouched.
