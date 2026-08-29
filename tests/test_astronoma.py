@@ -632,6 +632,37 @@ class InstallationTests(unittest.TestCase):
             consent = json.loads((Path(temporary) / "state" / "agent-consent.json").read_text())
             self.assertEqual(consent, {"enabled": True})
 
+    def test_uninstall_reverses_the_install_including_the_menu_row(self):
+        # The menu row points at the plugin directory, so removing them in
+        # the wrong order strands a menu entry with nothing behind it.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            config = Path(temporary) / "config"
+            env = {
+                **os.environ,
+                "XDG_CONFIG_HOME": str(config),
+                "ASTRONOMA_STATE_DIR": str(Path(temporary) / "state"),
+                "ASTRONOMA_CACHE_DIR": str(Path(temporary) / "cache"),
+                "ASTRONOMA_PACMAN_LOG": str(Path(temporary) / "absent-pacman.log"),
+                "ASTRONOMA_UPDATE_LOG": str(Path(temporary) / "absent-update.log"),
+            }
+            subprocess.run(
+                [root / "install.sh", "--no-enable", "--menu"],
+                cwd=root, env=env, check=True, capture_output=True, text=True,
+            )
+            menu = config / "omarchy" / "extensions" / "omarchy-menu.jsonc"
+            self.assertIn("astronoma", menu.read_text())
+
+            subprocess.run(
+                [root / "uninstall.sh"],
+                cwd=root, env=env, check=True, capture_output=True, text=True,
+            )
+            self.assertNotIn("astronoma", menu.read_text())
+            self.assertEqual(json.loads(menu.read_text()), {})
+            self.assertFalse(
+                (config / "omarchy" / "plugins" / "astronoma.updates").exists()
+            )
+
     def test_install_from_another_directory_still_copies_the_qml(self):
         # Run from anywhere but the checkout: a relative `./*.qml` in the copy
         # list globs against the caller's directory and quietly installs a
