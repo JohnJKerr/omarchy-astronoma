@@ -114,7 +114,7 @@ directory does not hot-reload, and the shell will keep running stale QML.
 ## Opening it
 
 On the default `unread` visibility the rocket leaves the bar once you have
-read an update. The flight log is still reachable, and is loaded on demand:
+read an update. The flight log is still loaded and reachable:
 
 - **Omarchy menu** — Update → Changelog, if you added the row above.
 - **A keybinding** in `~/.config/hypr/bindings.lua`:
@@ -135,7 +135,10 @@ read an update. The flight log is still reachable, and is loaded on demand:
   package breakdown, `r` refreshes, Esc closes.
 - **IPC**: `omarchy-shell astronoma <open|close|toggle|refresh>` for the
   flight log, `omarchy-shell astronoma.bar <open|close|toggle|refresh|status>`
-  for the card.
+  for the card. These targets are why the manifest sets `keepLoaded`: a
+  plugin that is only built on demand has no IPC handler registered until
+  something has already opened it, which is the wrong way round for a
+  keybinding.
 
 Summarising has no keyboard shortcut on purpose. The flight log takes
 exclusive keyboard focus, and a summary costs a real agent run, so the
