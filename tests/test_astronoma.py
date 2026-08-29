@@ -267,6 +267,17 @@ class HistoryTests(TempEnv):
 
 
 class ReleaseTests(TempEnv):
+    def test_malformed_cache_entries_are_ignored(self):
+        from astronoma import releases
+        self.cache.mkdir(parents=True, exist_ok=True)
+        (self.cache / "releases.json").write_text(json.dumps({
+            "schema": releases.CACHE_SCHEMA,
+            "fetchedAt": 9999999999,
+            "releases": [None, "bad", {"tag": "v4.0.1", "name": "v4.0.1"}],
+        }))
+        items, _ = releases.load()
+        self.assertEqual([item.tag for item in items], ["v4.0.1"])
+
     def _seed_cache(self, fetched_at=None):
         import time
         from astronoma import releases

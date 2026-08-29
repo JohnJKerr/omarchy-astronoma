@@ -74,19 +74,12 @@ def _read_cache() -> dict:
 
 
 def _write_cache(releases: list[Release]) -> None:
-    directory = paths.cache_dir()
-    directory.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema": CACHE_SCHEMA,
         "fetchedAt": int(time.time()),
         "releases": [release.as_dict() for release in releases],
     }
-    target = paths.releases_cache()
-    # Written via a sibling temp file so a killed shell can never leave a
-    # half-written cache that would poison every later read.
-    temporary = target.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(payload))
-    temporary.replace(target)
+    paths.atomic_json_write(paths.releases_cache(), payload)
 
 
 def _fetch(limit: int = 30, timeout: int = 15) -> list[Release]:
@@ -112,7 +105,11 @@ def load(refresh: bool = False, ttl: int = DEFAULT_TTL) -> tuple[list[Release], 
     render cached notes and still say the refresh did not get through.
     """
     cache = _read_cache()
-    cached = [Release.from_cache(item) for item in cache.get("releases", [])]
+    raw_cached = cache.get("releases", [])
+    cached = [
+        Release.from_cache(item) for item in raw_cached
+        if isinstance(raw_cached, list) and isinstance(item, dict)
+    ]
     fetched_at = int(cache.get("fetchedAt") or 0)
     age = int(time.time()) - fetched_at if fetched_at else None
     expired = age is None or age > ttl
