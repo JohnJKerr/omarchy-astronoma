@@ -109,7 +109,9 @@ def main(argv=None) -> int:
         )
 
     if args.command == "releases":
-        catalogue, status = releases_mod.load(refresh=args.refresh)
+        # Typed by a person who wants a fetch, not the panel reopening: this
+        # is the one caller that should get through the refresh floor.
+        catalogue, status = releases_mod.load(refresh=args.refresh, min_interval=0)
         return _emit(
             {"status": status, "releases": [r.as_dict() for r in catalogue]}, pretty
         )

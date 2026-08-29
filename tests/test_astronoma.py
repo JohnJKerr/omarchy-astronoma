@@ -338,6 +338,50 @@ class ReleaseTests(TempEnv):
             ["v4.0.1", "v4.0.0"],
         )
 
+    def test_forced_refresh_still_honours_the_rate_limit_floor(self):
+        from astronoma import releases
+        self._seed_cache()
+        calls = []
+        original = releases._fetch
+        releases._fetch = lambda *a, **k: calls.append(1) or []
+        try:
+            # The panel asks for a refresh on every open; a cache written
+            # seconds ago cannot have gone out of date.
+            _, status = releases.load(refresh=True)
+            self.assertEqual(calls, [])
+            self.assertEqual(status["source"], "cache")
+            # A person typing `releases --refresh` gets a real fetch.
+            releases.load(refresh=True, min_interval=0)
+            self.assertEqual(len(calls), 1)
+        finally:
+            releases._fetch = original
+
+    def test_oversized_payload_is_refused_rather_than_read_whole(self):
+        import contextlib
+        from astronoma import releases
+
+        class Endless:
+            """Stands in for a response that would never stop arriving."""
+            def read(self, amount=None):
+                return b"[" + b"x" * (amount - 1 if amount else 1_000_000)
+
+        @contextlib.contextmanager
+        def fake_urlopen(*_args, **_kwargs):
+            yield Endless()
+
+        original = releases.urllib.request.urlopen
+        releases.urllib.request.urlopen = fake_urlopen
+        try:
+            with self.assertRaises(ValueError):
+                releases._fetch()
+            # A refused fetch is a failed refresh, not a crash in the panel.
+            self._seed_cache(fetched_at=1)
+            items, status = releases.load(refresh=True)
+            self.assertEqual([r.tag for r in items], ["v4.0.1", "v4.0.0", "v3.8.4"])
+            self.assertTrue(status["stale"])
+        finally:
+            releases.urllib.request.urlopen = original
+
     def test_unknown_previous_version_does_not_claim_the_whole_history(self):
         from astronoma import releases
         self._seed_cache()

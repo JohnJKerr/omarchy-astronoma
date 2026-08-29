@@ -20,6 +20,13 @@ API = f"https://api.github.com/repos/{REPO}/releases"
 CACHE_SCHEMA = 1
 DEFAULT_TTL = 6 * 60 * 60  # Releases land a few times a week at most.
 USER_AGENT = "omarchy-astronoma"
+# Thirty releases of notes is a few hundred KB. Anything past this is not a
+# releases payload, and read() without a bound would take all of it.
+MAX_PAYLOAD_BYTES = 8 * 1024 * 1024
+# Opening the panel asks for a refresh every time, and unauthenticated GitHub
+# allows 60 requests an hour. Releases do not land often enough for a second
+# fetch inside this window to return anything new.
+MIN_REFRESH_INTERVAL = 5 * 60
 
 
 @dataclass
@@ -91,18 +98,26 @@ def _fetch(limit: int = 30, timeout: int = 15) -> list[Release]:
         },
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+        raw = response.read(MAX_PAYLOAD_BYTES + 1)
+    if len(raw) > MAX_PAYLOAD_BYTES:
+        raise ValueError("releases payload too large")
+    payload = json.loads(raw.decode("utf-8"))
     if not isinstance(payload, list):
         raise ValueError("unexpected releases payload")
     parsed = [Release.from_api(item) for item in payload if isinstance(item, dict)]
     return [release for release in parsed if release.tag]
 
 
-def load(refresh: bool = False, ttl: int = DEFAULT_TTL) -> tuple[list[Release], dict]:
+def load(refresh: bool = False, ttl: int = DEFAULT_TTL,
+         min_interval: int = MIN_REFRESH_INTERVAL) -> tuple[list[Release], dict]:
     """Return (releases, status). Never raises on a network problem.
 
     `status` carries `stale`, `fetchedAt` and any `error`, so the caller can
     render cached notes and still say the refresh did not get through.
+
+    `refresh` overrides the TTL but not `min_interval`, which keeps a panel
+    opened repeatedly from spending the hourly GitHub allowance on answers
+    that cannot have changed. Pass `min_interval=0` to force a real fetch.
     """
     cache = _read_cache()
     raw_cached = cache.get("releases", [])
@@ -113,8 +128,9 @@ def load(refresh: bool = False, ttl: int = DEFAULT_TTL) -> tuple[list[Release], 
     fetched_at = int(cache.get("fetchedAt") or 0)
     age = int(time.time()) - fetched_at if fetched_at else None
     expired = age is None or age > ttl
+    too_soon = age is not None and age < min_interval
 
-    if not refresh and not expired:
+    if (not refresh and not expired) or (refresh and too_soon and cached):
         return cached, {"stale": False, "fetchedAt": fetched_at, "source": "cache"}
 
     try:
