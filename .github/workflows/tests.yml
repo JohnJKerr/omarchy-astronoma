@@ -1,0 +1,59 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Report every version's result, rather than hiding the rest behind
+      # whichever failed first.
+      fail-fast: false
+      matrix:
+        # Arch ships 3.14, so that is what an Omarchy machine actually runs
+        # the helper under. 3.12 and 3.13 are kept as the trailing edge for
+        # anyone on an older Arch, and because they catch accidental use of
+        # very new syntax. The floor is 3.10 regardless: the helper annotates
+        # with `str | None` and has no `from __future__ import annotations`,
+        # so those are evaluated at import time.
+        python-version: ["3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run tests
+        # No dependencies to install: the helper is standard library only,
+        # and the suite stubs out the network, pacman and the Omarchy CLI, so
+        # it needs nothing from the runner but bash and Python.
+        run: python -m unittest discover -s tests -t . --verbose
+
+      - name: Check the manifest is loadable and its entry points exist
+        # `omarchy plugin validate` is not available here, so this covers the
+        # part that can go wrong in a commit: an entry point renamed in the
+        # manifest but not on disk, or vice versa.
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          manifest = json.loads(pathlib.Path("manifest.json").read_text())
+          missing = [
+              f"{kind} -> {path}"
+              for kind, path in manifest["entryPoints"].items()
+              if not pathlib.Path(path).is_file()
+          ]
+          if missing:
+              sys.exit("entry points missing from disk: " + ", ".join(missing))
+          print("manifest ok:", manifest["id"], manifest["version"])
+          PY

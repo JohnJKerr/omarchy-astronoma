@@ -10,6 +10,8 @@
    ..
 ```
 
+[![Tests](https://github.com/JohnJKerr/omarchy-astronoma/actions/workflows/tests.yml/badge.svg)](https://github.com/JohnJKerr/omarchy-astronoma/actions/workflows/tests.yml)
+
 Omarchy moves fast. Astronoma keeps track of what each update actually did
 to *this* machine — the version it moved you to, the releases you crossed,
 the packages it added, upgraded and removed, the migrations that ran, and
@@ -255,6 +257,12 @@ properties. Unused imports and genuine typos are what it is useful for.
 
 Adding support for another agent CLI is one entry in `AGENTS` in
 `helper/astronoma/agent.py`.
+
+CI runs the same suite on every push and pull request, across the Python
+versions Arch ships. The suite is hermetic by design — it stubs the network,
+`pacman` and the Omarchy CLI — so it needs nothing from the runner but bash
+and Python, and a test that reaches for any of those fails loudly rather
+than passing locally and behaving differently on CI.
 
 ## Licence
 

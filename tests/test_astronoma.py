@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+import urllib.request
 import subprocess
 import re
 from datetime import datetime, timedelta
@@ -36,9 +37,26 @@ PACMAN_SAMPLE = """\
 
 
 class TempEnv(unittest.TestCase):
-    """Redirects every Astronoma path into a throwaway tree."""
+    """Redirects every Astronoma path into a throwaway tree.
+
+    Also severs the network. The suite is meant to be hermetic, but an empty
+    release cache sends `load()` to GitHub, so a test that forgets to seed
+    one silently makes a real API call — which passes locally and then runs
+    unauthenticated from a shared CI runner. Failing loudly is better.
+    """
 
     def setUp(self):
+        self._blocked_urlopen = urllib.request.urlopen
+
+        def refuse(*_args, **_kwargs):
+            raise AssertionError(
+                "test reached the network; seed the release cache instead"
+            )
+
+        urllib.request.urlopen = refuse
+        self.addCleanup(
+            lambda: setattr(urllib.request, "urlopen", self._blocked_urlopen)
+        )
         self.tmp = tempfile.TemporaryDirectory()
         base = Path(self.tmp.name)
         self.state = base / "state"
@@ -548,7 +566,17 @@ class ReportTests(TempEnv):
         self.assertEqual([r["tag"] for r in payload["releases"]["recent"]], ["v4.0.1"])
 
     def test_report_is_json_serialisable(self):
-        from astronoma import capture, report
+        from astronoma import capture, releases, report
+        # Seeded so the empty cache does not send the suite to GitHub. Every
+        # other test here is hermetic; this one reached the network on every
+        # run, which on CI means an unauthenticated call from a shared runner.
+        self.cache.mkdir(parents=True, exist_ok=True)
+        (self.cache / "releases.json").write_text(json.dumps({
+            "schema": releases.CACHE_SCHEMA,
+            "fetchedAt": 9999999999,
+            "releases": [{"tag": "v4.0.1", "name": "v4.0.1",
+                          "publishedAt": "", "body": "notes", "url": ""}],
+        }))
         capture.run()
         json.dumps(report.build())
 
