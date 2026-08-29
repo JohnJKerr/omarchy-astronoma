@@ -1,0 +1,235 @@
+"""Optional impact summaries from a locally installed agent CLI.
+
+Astronoma never needs an API key: it looks for an agent the user has
+already installed and logged into, and shells out to it in one-shot mode.
+Everything is behind `AGENTS`, so supporting another CLI is one entry.
+
+The whole feature is optional by construction — nothing else in Astronoma
+reads this module, so a machine with no agent loses the summary button and
+keeps every other view.
+"""
+
+import json
+import shutil
+import subprocess
+import time
+from dataclasses import dataclass
+
+from . import history, paths
+
+TIMEOUT = 180
+
+
+@dataclass(frozen=True)
+class Agent:
+    key: str
+    name: str
+    command: str
+    # Built from the resolved binary plus the prompt, so an agent needing a
+    # subcommand or flag can express that without a special case elsewhere.
+    argv: tuple
+
+    def available(self) -> bool:
+        return shutil.which(self.command) is not None
+
+
+AGENTS = (
+    Agent("claude", "Claude Code", "claude", ("-p",)),
+    Agent("codex", "Codex", "codex", ("exec",)),
+    Agent("gemini", "Gemini CLI", "gemini", ("-p",)),
+    Agent("opencode", "opencode", "opencode", ("run",)),
+)
+
+
+def available() -> list[dict]:
+    return [
+        {"key": a.key, "name": a.name, "command": a.command}
+        for a in AGENTS if a.available()
+    ]
+
+
+def resolve(key: str | None = None) -> Agent | None:
+    """The agent to use: the one asked for, else the first installed."""
+    if key:
+        for candidate in AGENTS:
+            if candidate.key == key:
+                return candidate if candidate.available() else None
+        return None
+    for candidate in AGENTS:
+        if candidate.available():
+            return candidate
+    return None
+
+
+PROMPT_HEADER = """\
+You are explaining a completed Omarchy Linux system update to the person \
+whose machine was updated. Omarchy is an opinionated Arch/Hyprland desktop.
+
+Answer only this: what actually changed for me, and does any of it matter?
+
+Write for someone who will use this desktop in the next ten minutes. Lead \
+with what they will notice or must act on. Be specific and concrete; skip \
+anything that reads like a generic changelog.
+
+Cover, only where the data below supports it:
+- What the user will actually notice day to day
+- New user-facing features worth trying
+- Changed keybindings, Hyprland behaviour, shell/bar behaviour, or defaults
+- Anything likely to affect an existing config or workflow
+- Anything requiring manual action
+- Package changes that matter to normal desktop usage
+
+Rules:
+- Ground every claim in the data below. Do not invent releases or features.
+- If something needs manual action, say so first and plainly.
+- Skip routine dependency bumps unless they change behaviour.
+- Use short markdown bullets under a few bold headings. No preamble, no \
+closing summary, no restating this brief.
+- Aim for 200-350 words.
+"""
+
+
+def build_prompt(record: dict, releases: list) -> str:
+    """Assemble the agent's input from one update plus the notes it crossed.
+
+    Package lists are capped: an update can move a thousand packages, and
+    the tail is dependency noise that costs context without changing the
+    answer. Removals are never capped — a removed package is exactly the
+    kind of thing the user needs told about.
+    """
+    omarchy = record.get("omarchy") or {}
+    packages = record.get("packages") or {}
+    lines = [PROMPT_HEADER, "", "## This machine's update", ""]
+
+    previous, current = omarchy.get("from"), omarchy.get("to")
+    if current and previous:
+        lines.append(f"Omarchy {previous} -> {current}")
+    elif current:
+        lines.append(f"Omarchy {current} (no previous version recorded)")
+    else:
+        lines.append("Omarchy itself was not changed by this update.")
+    lines.append(f"Updated: {record.get('startedAt', 'unknown')}")
+    lines.append("")
+
+    def package_block(title: str, items: list, cap: int | None) -> None:
+        if not items:
+            return
+        shown = items if cap is None else items[:cap]
+        lines.append(f"### {title} ({len(items)})")
+        for item in shown:
+            name = item.get("name", "?")
+            if item.get("from") and item.get("to"):
+                lines.append(f"- {name} {item['from']} -> {item['to']}")
+            else:
+                lines.append(f"- {name} {item.get('to') or item.get('from') or ''}".rstrip())
+        if cap is not None and len(items) > cap:
+            lines.append(f"- ...and {len(items) - cap} more")
+        lines.append("")
+
+    package_block("Packages removed", packages.get("removed") or [], None)
+    package_block("Packages installed", packages.get("installed") or [], 40)
+    package_block("Packages upgraded", packages.get("upgraded") or [], 60)
+
+    migrations = record.get("migrations") or []
+    if migrations:
+        lines.append(f"### Omarchy migrations that ran ({len(migrations)})")
+        lines.extend(f"- {name}" for name in migrations)
+        lines.append("")
+
+    for title, key in (("Errors", "errors"), ("Warnings", "warnings")):
+        entries = record.get(key) or []
+        if entries:
+            lines.append(f"### {title} ({len(entries)})")
+            lines.extend(f"- {entry}" for entry in entries[:20])
+            lines.append("")
+
+    if record.get("partial"):
+        lines.append(
+            "Note: no update transcript survived for this update, so migrations "
+            "are inferred and errors are unknown.\n"
+        )
+
+    if releases:
+        lines.append("## Omarchy release notes crossed by this update")
+        lines.append("")
+        for release in releases:
+            lines.append(f"### {release.get('name') or release.get('tag')}")
+            body = str(release.get("body") or "").strip()
+            # Long majors run to tens of thousands of characters; the head
+            # carries the headline changes, which is what the brief asks for.
+            lines.append(body[:12000] + ("\n\n[...truncated]" if len(body) > 12000 else ""))
+            lines.append("")
+    else:
+        lines.append("No Omarchy release notes are available for this update.")
+
+    return "\n".join(lines)
+
+
+def _summary_path(identifier: str):
+    return paths.summaries_dir() / f"{identifier}.json"
+
+
+def cached_summary(identifier: str) -> dict | None:
+    try:
+        data = json.loads(_summary_path(identifier).read_text())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def save_summary(identifier: str, payload: dict) -> None:
+    directory = paths.summaries_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    target = _summary_path(identifier)
+    temporary = target.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n")
+    temporary.replace(target)
+
+
+def summarise(identifier: str, releases: list, key: str | None = None,
+              refresh: bool = False) -> dict:
+    """Run an installed agent over one update and cache the result.
+
+    A summary costs real time and tokens, so it is only produced on
+    request and is reused until the caller explicitly asks for a refresh.
+    """
+    if not refresh:
+        cached = cached_summary(identifier)
+        if cached and cached.get("text"):
+            return {**cached, "cached": True}
+
+    record = history.load(identifier)
+    if not record:
+        return {"ok": False, "error": f"No captured update {identifier}"}
+
+    chosen = resolve(key)
+    if not chosen:
+        return {"ok": False, "error": "No supported agent CLI is installed"}
+
+    prompt = build_prompt(record, releases)
+    argv = [chosen.command, *chosen.argv, prompt]
+    try:
+        completed = subprocess.run(
+            argv, capture_output=True, text=True, timeout=TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": f"{chosen.name} timed out after {TIMEOUT}s"}
+    except OSError as error:
+        return {"ok": False, "error": f"Could not run {chosen.name}: {error}"}
+
+    text = (completed.stdout or "").strip()
+    if completed.returncode != 0 or not text:
+        detail = (completed.stderr or "").strip().splitlines()
+        message = detail[-1] if detail else f"exit {completed.returncode}"
+        return {"ok": False, "error": f"{chosen.name} failed: {message[:200]}"}
+
+    payload = {
+        "ok": True,
+        "id": identifier,
+        "agent": chosen.key,
+        "agentName": chosen.name,
+        "generatedAt": int(time.time()),
+        "text": text,
+    }
+    save_summary(identifier, payload)
+    return {**payload, "cached": False}

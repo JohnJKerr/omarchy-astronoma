@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "astronoma.updates",
+  "name": "Astronoma",
+  "version": "1.0.0",
+  "author": "John Kerr",
+  "license": "MIT",
+  "description": "Omarchy is a rocket ship. Astronoma is the flight log. It tracks what changed on this machine between updates — releases crossed, package changes, migrations, warnings — with an optional agent summary of what actually matters.",
+  "kinds": ["bar-widget", "overlay"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "barWidget": "BarWidget.qml",
+    "overlay": "Flightlog.qml"
+  },
+  "barWidget": {
+    "displayName": "Astronoma",
+    "description": "Shows a rocket in the bar when an update has landed that you have not read yet. Click for the summary, or open the full flight log.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "visibility": "unread",
+      "refreshIntervalSec": 900
+    },
+    "schema": [
+      {
+        "key": "visibility",
+        "type": "enum",
+        "label": "Show in bar",
+        "options": ["unread", "always"],
+        "defaultValue": "unread",
+        "description": "'unread' shows the rocket only while an update you have not opened is waiting. 'always' keeps it in the bar permanently."
+      },
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 60,
+        "max": 21600,
+        "step": 60,
+        "defaultValue": 900
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+Script started on 2026-08-28 23:00:12+01:00
+[32m
+Update system packages[0m
+:: Synchronising package databases...
+ core downloading...
+ extra   1234.5 KiB   extra   4096.0 KiB   extra   8192.0 KiB   00:01 [######] 100%
+:: Starting full system upgrade...
+warning: gcc14: ignoring package upgrade (14.2.1-1 => 14.3.0-1)
+resolving dependencies...
+Packages (59) brave-origin-bin-1:1.94.117-1  omarchy-4.0.1-1
+(1/59) upgrading omarchy...
+upgrading omarchy...
+upgrading brave-origin-bin...
+installing qt6-wayland...
+removing quickshell-git...
+error: target not found: some-optional-pkg
+[32m
+Running migration (1787618700)[0m
+Migrating bar layout to shell.json
+[32m
+Running migration (1787580187)[0m
+[31mError: Initramfs generation may have failed. Review logs before restart.[0m
+[32m
+Update AUR packages[0m
+[31m
+AUR is unavailable (so skipping updates)[0m
+]0;omarchy updateScript done on 2026-08-28 23:06:14+01:00
