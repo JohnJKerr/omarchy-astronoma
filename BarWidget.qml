@@ -5,8 +5,9 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// The bar surface: a rocket that appears when an update has landed, and a
-// compact card answering "what changed, and does it matter?".
+// The bar surface: a rocket that sits in the bar and goes accent-coloured
+// when an update has landed, and a compact card answering "what changed,
+// and does it matter?".
 //
 // Anything longer than the card — whole release notes, older updates — is
 // the flight log's job, which this opens rather than duplicates.
@@ -22,16 +23,21 @@ Panel {
   readonly property color dim: Qt.darker(foreground, 1.5)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  readonly property string visibility: setting("visibility", "unread")
+  readonly property string visibility: setting("visibility", "always")
   readonly property int refreshIntervalSec: Math.max(60, Number(setting("refreshIntervalSec", 900)) || 900)
 
-  // "unread" is the default: the rocket shows up when an update lands and
-  // stands down once it has been read, so the bar stays quiet the rest of
-  // the time. "always" keeps it permanently for people who want the flight
-  // log one click away.
+  // "always" is the default: the rocket behaves like every other bar widget,
+  // sitting in the bar and going accent-coloured when an update is waiting.
+  // It means always — not "whenever there is something to say" — because a
+  // widget that silently removes itself reads as a broken install, which is
+  // exactly how this looked before the default changed. The card explains an
+  // empty state far better than an absent icon does.
+  //
+  // "unread" is the quieter option: the rocket appears when an update lands
+  // and stands down once it has been read.
   readonly property bool shouldShow: {
     if (!service.everLoaded) return false
-    if (visibility === "always") return service.hasAnything
+    if (visibility === "always") return true
     return service.hasUnread
   }
 

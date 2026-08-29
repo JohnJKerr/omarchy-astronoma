@@ -31,8 +31,8 @@ draws the full view, and both simply render what the helper returns.
 
 ## Features
 
-- **A bar rocket** that appears when an update has landed that you have not
-  read yet, and stands down once you have. Click for a card with the
+- **A bar rocket** that sits in the bar and turns accent-coloured when an
+  update has landed that you have not read yet. Click for a card with the
   version change, what the update did, and the headline changes from the
   releases you crossed.
 - **A full flight log** — every captured update, the releases crossed with
@@ -117,8 +117,13 @@ directory does not hot-reload, and the shell will keep running stale QML.
 
 ## Opening it
 
-On the default `unread` visibility the rocket leaves the bar once you have
-read an update. The flight log is still loaded and reachable:
+The rocket is in the bar by default: click it for the summary card,
+right-click for the full flight log. It is accent-coloured while an update
+you have not opened is waiting, and returns to the bar's normal foreground
+once you have read it.
+
+If you set `visibility` to `"unread"` the rocket leaves the bar entirely
+once an update has been read. The flight log is still loaded and reachable:
 
 - **Omarchy menu** — Update → Changelog, if you added the row above.
 - **A keybinding** in `~/.config/hypr/bindings.lua`:
@@ -128,7 +133,6 @@ read an update. The flight log is still loaded and reachable:
   ```
 
 - **A terminal** — `omarchy-shell shell toggle io.github.johnjkerr.astronoma '{}'`.
-- Or keep the rocket in the bar permanently with `visibility: "always"`.
 
 ## Interactions
 
@@ -155,11 +159,11 @@ can be set with `omarchy bar set io.github.johnjkerr.astronoma <key> <value>`:
 
 | Key | Default | What it does |
 |---|---|---|
-| `visibility` | `"unread"` | `"unread"` shows the rocket only while an update you have not opened is waiting; `"always"` keeps it in the bar |
+| `visibility` | `"always"` | `"always"` keeps the rocket in the bar, accent-coloured while an unread update is waiting. `"unread"` is quieter: the rocket appears only while such an update is waiting and leaves the bar once you have read it — so on that setting the bar shows nothing most of the time, and the menu row or a keybinding is how you get back in |
 | `refreshIntervalSec` | `900` | How often the widget re-reads local update state. The network refresh happens when you open the card, not on this timer |
 
 ```bash
-omarchy bar set io.github.johnjkerr.astronoma visibility always
+omarchy bar set io.github.johnjkerr.astronoma visibility unread
 omarchy bar set io.github.johnjkerr.astronoma refreshIntervalSec 300 --json
 ```
 

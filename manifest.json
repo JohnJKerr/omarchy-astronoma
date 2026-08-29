@@ -14,12 +14,12 @@
   },
   "barWidget": {
     "displayName": "Astronoma",
-    "description": "Shows a rocket in the bar when an update has landed that you have not read yet. Click for the summary, or open the full flight log.",
+    "description": "Keeps a rocket in the bar, accent-coloured while an update you have not read is waiting. Click for the summary, or open the full flight log.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "center",
     "defaults": {
-      "visibility": "unread",
+      "visibility": "always",
       "refreshIntervalSec": 900
     },
     "schema": [
@@ -27,9 +27,9 @@
         "key": "visibility",
         "type": "enum",
         "label": "Show in bar",
-        "options": ["unread", "always"],
-        "defaultValue": "unread",
-        "description": "'unread' shows the rocket only while an update you have not opened is waiting. 'always' keeps it in the bar permanently."
+        "options": ["always", "unread"],
+        "defaultValue": "always",
+        "description": "'always' keeps the rocket in the bar, accent-coloured while an update you have not opened is waiting. 'unread' is quieter: the rocket appears only while such an update is waiting, and leaves the bar once you have read it."
       },
       {
         "key": "refreshIntervalSec",
