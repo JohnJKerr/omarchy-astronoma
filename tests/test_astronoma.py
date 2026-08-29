@@ -375,9 +375,19 @@ class AgentTests(TempEnv):
     def test_supported_agents_do_not_allow_unattended_tools(self):
         from astronoma import agent
         commands = {item.command: item.argv for item in agent.AGENTS}
-        self.assertNotIn("codex", commands)
         self.assertNotIn("opencode", commands)
         self.assertEqual(commands["claude"], ("-p",))
+        codex = commands["codex"]
+        self.assertIn("--strict-config", codex)
+        self.assertIn("--ignore-user-config", codex)
+        self.assertIn("--ephemeral", codex)
+        self.assertEqual(codex[codex.index("--sandbox") + 1], "read-only")
+        disabled = {
+            codex[index + 1] for index, value in enumerate(codex)
+            if value == "--disable"
+        }
+        self.assertTrue({"shell_tool", "hooks", "browser_use", "plugins"} <= disabled)
+        self.assertIn('web_search="disabled"', codex)
 
     def test_state_and_summary_files_are_private(self):
         from astronoma import agent, capture, history

@@ -44,7 +44,7 @@ draws the full view, and both simply render what the helper returns.
   `name  old → new`, with a filter for updates that moved a thousand
   packages.
 - **Errors and warnings surfaced**, never silently dropped.
-- **An optional agent summary.** If Claude Code or Gemini CLI is installed,
+- **An optional agent summary.** If Claude Code, Codex, or Gemini CLI is installed,
   Astronoma can hand it the release notes plus your
   machine's package changes and ask what actually affects you.
 - **Offline-safe.** Release notes are cached; a failed refresh shows the
@@ -163,8 +163,11 @@ a second, explicit **Enable and summarise** press records consent and starts
 the agent. No configuration-file editing is required. Revoke consent with
 `bin/astronoma agent-summaries disable`.
 Release notes and local update evidence are treated as untrusted input:
-Claude Code is launched with tools disabled, while Gemini's non-interactive
-mode cannot approve tool calls. Both run from an empty temporary directory.
+Claude Code is launched with tools disabled. Codex runs ephemerally with its
+shell, hooks, plugins, browser, apps, skills, image tools, user configuration,
+and web search disabled; strict configuration validation makes unsupported
+controls fail closed. Gemini's non-interactive mode cannot approve tool calls.
+All supported agents run from an empty temporary directory.
 Astronoma deliberately does not invoke general-purpose agents that cannot
 guarantee a non-tooling run.
 

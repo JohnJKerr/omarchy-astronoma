@@ -36,6 +36,23 @@ class Agent:
 
 AGENTS = (
     Agent("claude", "Claude Code", "claude", ("-p",)),
+    Agent("codex", "Codex", "codex", (
+        "exec",
+        "--strict-config",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--ephemeral",
+        "--sandbox", "read-only",
+        "--skip-git-repo-check",
+        "--disable", "shell_tool",
+        "--disable", "hooks",
+        "--disable", "browser_use",
+        "--disable", "apps",
+        "--disable", "plugins",
+        "--disable", "skill_search",
+        "--disable", "view_image",
+        "--config", 'web_search="disabled"',
+    )),
     Agent("gemini", "Gemini CLI", "gemini", ("-p",)),
 )
 
