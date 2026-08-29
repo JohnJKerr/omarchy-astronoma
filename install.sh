@@ -87,7 +87,22 @@ fi
 if command -v omarchy-shell >/dev/null && omarchy-shell shell ping >/dev/null 2>&1; then
   omarchy-shell shell rescanPlugins >/dev/null || true
   if (( ENABLE )); then
-    omarchy plugin enable "$PLUGIN_ID" >/dev/null 2>&1 || true
+    # The rescan is asynchronous, so enabling a plugin id the shell has not
+    # caught up with yet fails. Retry briefly rather than swallowing it: a
+    # silent failure here leaves the plugin installed, listed, and inert,
+    # with only "plugin not enabled, not summoning" on the shell's console
+    # to explain why nothing happens.
+    for attempt in 1 2 3 4 5; do
+      if omarchy plugin enable "$PLUGIN_ID" >/dev/null 2>&1; then
+        ENABLE=0
+        break
+      fi
+      sleep 1
+    done
+    if (( ENABLE )); then
+      echo "Installed, but could not enable it automatically." >&2
+      echo "Run: omarchy plugin enable $PLUGIN_ID" >&2
+    fi
   fi
   echo "Installed. If the bar does not show it, run: omarchy-restart-shell"
 else
