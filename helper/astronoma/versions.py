@@ -14,6 +14,16 @@ from . import paths
 _PKG_CANDIDATES = ("omarchy-dev", "omarchy")
 
 
+def is_dev_checkout() -> bool:
+    """Whether OMARCHY_PATH points somewhere other than the packaged tree.
+
+    Distinct from simply not knowing the version: a dev build has no release
+    to line up against, while a machine whose pacman is unreadable has one
+    that we merely failed to read. The UI phrases those differently.
+    """
+    return str(paths.omarchy_path()).rstrip("/") != "/usr/share/omarchy"
+
+
 def installed() -> str | None:
     """The Omarchy version this machine is running, or None if unknown.
 
@@ -21,8 +31,7 @@ def installed() -> str | None:
     has no release to line up against, so it deliberately yields None
     rather than a version that would sort wrongly against real releases.
     """
-    path = paths.omarchy_path()
-    if str(path).rstrip("/") != "/usr/share/omarchy":
+    if is_dev_checkout():
         return None
     for package in _PKG_CANDIDATES:
         version = _pacman_version(package)

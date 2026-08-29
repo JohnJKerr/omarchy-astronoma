@@ -7,7 +7,6 @@
   "license": "MIT",
   "description": "A local flight log for Omarchy updates: releases crossed, package changes, migrations, warnings, and optional safe agent summaries.",
   "kinds": ["bar-widget", "overlay"],
-  "keepLoaded": true,
   "entryPoints": {
     "barWidget": "BarWidget.qml",
     "overlay": "Flightlog.qml"

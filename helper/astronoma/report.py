@@ -60,7 +60,11 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
         "omarchy": {
             "installed": installed,
             "installedRaw": installed_raw,
-            "isDev": installed_raw is None,
+            # A dev checkout has no release to line up against; an unreadable
+            # pacman is a version we failed to read. Both leave `installed`
+            # empty, and only the first is the machine being unusual.
+            "isDev": versions.is_dev_checkout(),
+            "versionUnknown": installed_raw is None,
         },
         "releases": {
             "status": status,
