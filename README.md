@@ -197,7 +197,7 @@ Add `--pretty` to any of them.
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 47 tests, no dependencies
+python3 -m unittest discover -s tests -t .   # 48 tests, no dependencies
 omarchy plugin validate .                    # manifest against the schema
 ./install.sh && omarchy-restart-shell        # install and reload
 ```
