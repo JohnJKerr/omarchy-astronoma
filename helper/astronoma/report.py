@@ -70,7 +70,7 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
         },
         "history": [history.summary_row(record) for record in records],
         # Drives whether the bar asks for attention at all.
-        "unread": history.unread_id(),
+        "unread": history.unread_in(records),
         "agents": agent.available(),
         "agentSummariesEnabled": agent.enabled(),
         "latest": None,

@@ -73,14 +73,16 @@ def latest() -> dict | None:
     return records[0] if records else None
 
 
-def digests() -> set[str]:
-    """Transcript digests already captured, so no run is recorded twice."""
-    found = set()
-    for record in all_records():
-        digest = (record.get("sources") or {}).get("logDigest")
-        if digest:
-            found.add(str(digest))
-    return found
+def any_records() -> bool:
+    """Whether anything has ever been captured, without parsing it.
+
+    The capture short-circuit only needs to know that history is not empty,
+    and reading every record to answer that is the expensive way to ask.
+    """
+    try:
+        return any(_ID.match(file.stem) for file in paths.state_dir().glob("*.json"))
+    except OSError:
+        return False
 
 
 def _seen_path():
@@ -103,7 +105,7 @@ def mark_seen(identifier: str) -> str | None:
     Only ever moves forward: opening an old update from the history list
     must not re-flag the newest one as unread.
     """
-    if not _ID.match(str(identifier or "")):
+    if not valid_id(identifier):
         return seen_id()
     current = seen_id()
     if current and current >= identifier:
@@ -113,14 +115,22 @@ def mark_seen(identifier: str) -> str | None:
     return identifier
 
 
-def unread_id() -> str | None:
-    """The newest captured update the user has not opened yet, if any."""
-    records = all_records()
+def unread_in(records: list[dict]) -> str | None:
+    """The newest of `records` the user has not opened yet, if any.
+
+    Takes the list so a caller that already has it does not pay to read and
+    parse every record file a second time.
+    """
     if not records:
         return None
     newest = str(records[0].get("id") or "")
     seen = seen_id()
     return newest if (not seen or newest > seen) else None
+
+
+def unread_id() -> str | None:
+    """The newest captured update the user has not opened yet, if any."""
+    return unread_in(all_records())
 
 
 def summary_row(record: dict) -> dict:
