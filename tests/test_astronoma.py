@@ -614,17 +614,59 @@ class MenuEntryTests(unittest.TestCase):
 
 
 class InstallationTests(unittest.TestCase):
+    """Exercises install.sh and uninstall.sh against a throwaway config tree.
+
+    These scripts talk to the shell as well as the filesystem, and the shell
+    they would reach is the developer's own running session — which does not
+    know about XDG_CONFIG_HOME and would happily disable the real plugin.
+
+    So every test here shadows `omarchy` and `omarchy-shell` with stubs that
+    fail, putting both scripts on their "no shell available" path. Shadowing
+    rather than stripping PATH: omarchy is installed at /usr/bin as well as
+    in its own bin directory, so there is no single entry to remove.
+    """
+
+    def _env(self, temporary, **extra):
+        stubs = Path(temporary) / "stub-bin"
+        stubs.mkdir(parents=True, exist_ok=True)
+        for tool in ("omarchy", "omarchy-shell"):
+            stub = stubs / tool
+            stub.write_text("#!/bin/sh\nexit 1\n")
+            stub.chmod(0o755)
+        return {
+            **os.environ,
+            "PATH": os.pathsep.join([str(stubs), os.environ.get("PATH", "")]),
+            "XDG_CONFIG_HOME": str(Path(temporary) / "config"),
+            "ASTRONOMA_STATE_DIR": str(Path(temporary) / "state"),
+            "ASTRONOMA_CACHE_DIR": str(Path(temporary) / "cache"),
+            "ASTRONOMA_PACMAN_LOG": str(Path(temporary) / "absent-pacman.log"),
+            "ASTRONOMA_UPDATE_LOG": str(Path(temporary) / "absent-update.log"),
+            **extra,
+        }
+
+    def test_scripts_cannot_reach_the_real_shell(self):
+        # The guard the other tests in this class depend on. Without it a
+        # run of this suite disables the developer's own installed plugin.
+        with tempfile.TemporaryDirectory() as temporary:
+            env = self._env(temporary)
+            for tool in ("omarchy", "omarchy-shell"):
+                found = subprocess.run(
+                    ["/bin/bash", "-c", f"command -v {tool}"],
+                    env=env, capture_output=True, text=True,
+                )
+                self.assertEqual(
+                    found.stdout.strip(),
+                    str(Path(temporary) / "stub-bin" / tool),
+                    f"{tool} resolves outside the stub directory",
+                )
+                self.assertNotEqual(
+                    subprocess.run([tool], env=env, capture_output=True).returncode,
+                    0, f"{tool} stub should fail",
+                )
     def test_install_can_preaccept_agent_summaries(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(__file__).resolve().parents[1]
-            env = {
-                **os.environ,
-                "XDG_CONFIG_HOME": str(Path(temporary) / "config"),
-                "ASTRONOMA_STATE_DIR": str(Path(temporary) / "state"),
-                "ASTRONOMA_CACHE_DIR": str(Path(temporary) / "cache"),
-                "ASTRONOMA_PACMAN_LOG": str(Path(temporary) / "absent-pacman.log"),
-                "ASTRONOMA_UPDATE_LOG": str(Path(temporary) / "absent-update.log"),
-            }
+            env = self._env(temporary)
             subprocess.run(
                 [root / "install.sh", "--no-enable", "--enable-agent-summaries"],
                 cwd=root, env=env, check=True, capture_output=True, text=True,
@@ -638,14 +680,7 @@ class InstallationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(__file__).resolve().parents[1]
             config = Path(temporary) / "config"
-            env = {
-                **os.environ,
-                "XDG_CONFIG_HOME": str(config),
-                "ASTRONOMA_STATE_DIR": str(Path(temporary) / "state"),
-                "ASTRONOMA_CACHE_DIR": str(Path(temporary) / "cache"),
-                "ASTRONOMA_PACMAN_LOG": str(Path(temporary) / "absent-pacman.log"),
-                "ASTRONOMA_UPDATE_LOG": str(Path(temporary) / "absent-update.log"),
-            }
+            env = self._env(temporary)
             subprocess.run(
                 [root / "install.sh", "--no-enable", "--menu"],
                 cwd=root, env=env, check=True, capture_output=True, text=True,
@@ -671,18 +706,10 @@ class InstallationTests(unittest.TestCase):
             root = Path(__file__).resolve().parents[1]
             elsewhere = Path(temporary) / "elsewhere"
             elsewhere.mkdir()
-            env = {
-                **os.environ,
-                "XDG_CONFIG_HOME": str(Path(temporary) / "config"),
-                "ASTRONOMA_STATE_DIR": str(Path(temporary) / "state"),
-                "ASTRONOMA_CACHE_DIR": str(Path(temporary) / "cache"),
-                "ASTRONOMA_PACMAN_LOG": str(Path(temporary) / "absent-pacman.log"),
-                "ASTRONOMA_UPDATE_LOG": str(Path(temporary) / "absent-update.log"),
-                # The install's own capture run would otherwise write fresh
-                # bytecode; suppressing it leaves any __pycache__ found below
-                # as proof the checkout's stale copy was installed.
-                "PYTHONDONTWRITEBYTECODE": "1",
-            }
+            # Suppressing bytecode leaves any __pycache__ found below as
+            # proof the checkout's stale copy was installed, rather than
+            # fresh output from the install's own capture run.
+            env = self._env(temporary, PYTHONDONTWRITEBYTECODE="1")
             subprocess.run(
                 [root / "install.sh", "--no-enable"],
                 cwd=elsewhere, env=env, check=True, capture_output=True, text=True,
