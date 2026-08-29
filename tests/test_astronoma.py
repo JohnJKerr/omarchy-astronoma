@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -72,11 +73,20 @@ class TempEnv(unittest.TestCase):
             "ASTRONOMA_MIGRATIONS_DIR": str(self.migrations),
             "ASTRONOMA_PACMAN_LOG": str(self.pacman),
             "ASTRONOMA_UPDATE_LOG": str(base / "absent.log"),
+            # Record ids are local time by design — "28 Aug" should mean the
+            # user's 28 August. That makes them depend on the machine's zone,
+            # so the fixture's +0100 stamps only land on the ids asserted
+            # below when the clock agrees. Pinned to a fixed +0100 (not
+            # Europe/London, which would move the answer in winter) so the
+            # suite reads the same in London, UTC and Tokyo.
+            "TZ": "Etc/GMT-1",
         })
+        time.tzset()
 
     def tearDown(self):
         os.environ.clear()
         os.environ.update(self._saved)
+        time.tzset()
         self.tmp.cleanup()
 
 

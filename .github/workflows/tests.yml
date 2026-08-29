@@ -14,6 +14,12 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # Deliberately neither UTC nor the author's zone. Record ids are local
+      # time, so a test that reads the clock without going through TempEnv's
+      # pin passes in London and fails here — which is the failure this job
+      # exists to catch before a contributor hits it.
+      TZ: Asia/Tokyo
     strategy:
       # Report every version's result, rather than hiding the rest behind
       # whichever failed first.
