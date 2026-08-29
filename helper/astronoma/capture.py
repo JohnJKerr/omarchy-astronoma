@@ -11,6 +11,10 @@ alone, and marked `partial`. That backfill is what lets a machine show a
 useful history the first time Astronoma ever runs.
 """
 
+import fcntl
+import json
+import os
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 from . import history, pacmanlog, paths, updatelog, versions
@@ -114,16 +118,62 @@ def _log_matches(session: pacmanlog.Session, log: updatelog.UpdateLog) -> bool:
     return bool(named & {c.name for c in session.changes})
 
 
+@contextmanager
+def _capture_lock():
+    directory = paths.state_dir()
+    paths.private_directory(directory)
+    with (directory / ".capture.lock").open("a+") as handle:
+        os.fchmod(handle.fileno(), 0o600)
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+
+
+def _source_signature() -> dict:
+    signature = {}
+    for name, source in (("pacman", paths.pacman_log()), ("update", paths.update_log())):
+        try:
+            stat = source.stat()
+            signature[name] = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
+        except OSError:
+            signature[name] = None
+    return signature
+
+
+def run_if_changed() -> dict:
+    """Skip the expensive full-log pass when neither input changed."""
+    stamp = paths.state_dir() / ".capture-sources.json"
+    signature = _source_signature()
+    try:
+        previous = json.loads(stamp.read_text())
+    except (OSError, ValueError):
+        previous = None
+    if previous == signature and history.latest() is not None:
+        return {"captured": [], "skipped": [], "unchanged": True}
+    result = run()
+    paths.atomic_json_write(stamp, signature, private=True)
+    return result
+
+
 def run(force: bool = False) -> dict:
     """Capture every update the machine can still evidence.
 
     Returns a report of what was written, so the caller can tell the
     difference between "nothing to do" and "nothing readable".
     """
+    with _capture_lock():
+        return _run_locked(force)
+
+
+def _run_locked(force: bool = False) -> dict:
     sessions = [s for s in pacmanlog.sessions() if _is_update(s)]
     log = updatelog.load()
-    known = set() if force else history.digests()
-    existing = {r.get("id") for r in history.all_records()}
+    records = history.all_records()
+    known = set() if force else {
+        str(digest) for record in records
+        if (digest := (record.get("sources") or {}).get("logDigest"))
+    }
+    existing_records = {r.get("id"): r for r in records}
+    existing = set(existing_records)
 
     # Attach the transcript to the update it actually dates to. Searching
     # newest first means an ambiguous match lands on the most recent run,
@@ -147,7 +197,15 @@ def run(force: bool = False) -> dict:
                 skipped.append(identifier)
                 continue
 
-        history.save(_record_from(session, attached))
+        rebuilt = _record_from(session, attached)
+        previous = existing_records.get(identifier)
+        if previous and not attached and not previous.get("partial", True):
+            # Package history is reproducible, but a vanished transcript is
+            # not. Never erase evidence retained by an earlier capture.
+            for key in ("migrations", "warnings", "errors", "failed", "aurSkipped", "partial"):
+                rebuilt[key] = previous.get(key)
+            rebuilt["sources"] = previous.get("sources", rebuilt["sources"])
+        history.save(rebuilt)
         captured.append(identifier)
 
     return {

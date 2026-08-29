@@ -78,7 +78,7 @@ def main(argv=None) -> int:
         if not args.no_capture:
             # Capturing first is what makes a freshly finished update show up
             # the moment the panel is opened.
-            capture.run()
+            capture.run_if_changed()
         return _emit(
             report.build(refresh=args.refresh, notes_limit=args.notes_limit), pretty
         )

@@ -171,6 +171,17 @@ class UpdateLogTests(unittest.TestCase):
 
 
 class CaptureTests(TempEnv):
+    def test_force_preserves_transcript_evidence_for_older_records(self):
+        from astronoma import capture, history
+        self._stage_transcript(finished="2026-08-17T09:00:30+01:00")
+        capture.run()
+        before = history.load("2026-08-17-0900")
+        os.environ["ASTRONOMA_UPDATE_LOG"] = str(Path(self.tmp.name) / "absent.log")
+        capture.run(force=True)
+        after = history.load("2026-08-17-0900")
+        self.assertEqual(after["errors"], before["errors"])
+        self.assertFalse(after["partial"])
+
     def test_captures_only_updates_not_one_off_installs(self):
         from astronoma import capture, history
         capture.run()
