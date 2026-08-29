@@ -66,6 +66,13 @@ prompts.
 
 Astronoma needs `python3`, which Omarchy already installs. Nothing else.
 
+Agent summaries remain disabled by default. To pre-accept them during a
+scripted setup, enable consent immediately after installation:
+
+```bash
+~/.config/omarchy/plugins/astronoma.updates/bin/astronoma agent-summaries enable
+```
+
 Optionally add a permanent row to the Omarchy menu under **Update →
 Changelog**:
 
@@ -89,8 +96,10 @@ To hack on it, clone anywhere and install a copy:
 ```bash
 git clone https://github.com/JohnJKerr/omarchy-astronoma.git
 cd omarchy-astronoma
-./install.sh --menu
+./install.sh --menu --enable-agent-summaries
 ```
+
+Omit `--enable-agent-summaries` to keep the default in-product consent flow.
 
 `install.sh` copies rather than symlinks on purpose: a symlinked plugin
 directory does not hot-reload, and the shell will keep running stale QML.
@@ -202,7 +211,7 @@ Add `--pretty` to any of them.
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 51 tests, no dependencies
+python3 -m unittest discover -s tests -t .   # 52 tests, no dependencies
 omarchy plugin validate .                    # manifest against the schema
 ./install.sh && omarchy-restart-shell        # install and reload
 ```

@@ -8,6 +8,7 @@
 #   ./install.sh              install or update, then enable
 #   ./install.sh --no-enable   install without touching the bar layout
 #   ./install.sh --menu        also add a row to the Omarchy menu
+#   ./install.sh --enable-agent-summaries  pre-accept the optional AI feature
 
 set -euo pipefail
 
@@ -16,11 +17,17 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
 ENABLE=1
 MENU=0
+AGENT_SUMMARIES=0
 
 for arg in "$@"; do
   case "$arg" in
     --no-enable) ENABLE=0 ;;
     --menu) MENU=1 ;;
+    --enable-agent-summaries) AGENT_SUMMARIES=1 ;;
+    *)
+      echo "Unknown option: $arg" >&2
+      exit 2
+      ;;
   esac
 done
 
@@ -37,6 +44,11 @@ for entry in manifest.json README.md LICENSE Model.js bin helper assets ./*.qml;
   [[ -e $SOURCE_DIR/$entry ]] && cp -r "$SOURCE_DIR/$entry" "$TARGET_DIR/"
 done
 chmod +x "$TARGET_DIR/bin/astronoma" "$TARGET_DIR/bin/astronoma-menu-entry"
+
+if (( AGENT_SUMMARIES )); then
+  "$TARGET_DIR/bin/astronoma" agent-summaries enable >/dev/null
+  echo "Agent summaries enabled: update evidence and GitHub release notes may be sent to an installed agent when requested."
+fi
 
 # Opt-in: the bar rocket hides once an update is read, so a permanent menu
 # row is how the flight log stays reachable the rest of the time.

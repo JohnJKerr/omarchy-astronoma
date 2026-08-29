@@ -506,5 +506,25 @@ class MenuEntryTests(unittest.TestCase):
             self.assertEqual(json.loads(config.read_text()), {"existing": {"label": "Existing"}})
 
 
+class InstallationTests(unittest.TestCase):
+    def test_install_can_preaccept_agent_summaries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            env = {
+                **os.environ,
+                "XDG_CONFIG_HOME": str(Path(temporary) / "config"),
+                "ASTRONOMA_STATE_DIR": str(Path(temporary) / "state"),
+                "ASTRONOMA_CACHE_DIR": str(Path(temporary) / "cache"),
+                "ASTRONOMA_PACMAN_LOG": str(Path(temporary) / "absent-pacman.log"),
+                "ASTRONOMA_UPDATE_LOG": str(Path(temporary) / "absent-update.log"),
+            }
+            subprocess.run(
+                [root / "install.sh", "--no-enable", "--enable-agent-summaries"],
+                cwd=root, env=env, check=True, capture_output=True, text=True,
+            )
+            consent = json.loads((Path(temporary) / "state" / "agent-consent.json").read_text())
+            self.assertEqual(consent, {"enabled": True})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
