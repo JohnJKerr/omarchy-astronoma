@@ -236,9 +236,22 @@ Add `--pretty` to any of them.
 ```bash
 python3 -m unittest discover -s tests -t .   # 64 tests, no dependencies
 omarchy plugin validate .                    # manifest against the schema
-qmllint -I "$OMARCHY_PATH/shell" ./*.qml       # needs qt6-declarative
 ./install.sh && omarchy-restart-shell        # install and reload
 ```
+
+To lint the QML, note that Arch keeps Qt 6's tools off `PATH`, and that the
+shell's modules are imported as `qs.*` — so the import path has to be a
+directory *containing* a `qs` entry, not the shell directory itself:
+
+```bash
+mkdir -p /tmp/qmlroot && ln -sfn "${OMARCHY_PATH:-/usr/share/omarchy}/shell" /tmp/qmlroot/qs
+/usr/lib/qt6/bin/qmllint -I /tmp/qmlroot ./*.qml
+```
+
+It reports `unqualified`, `missing-property`, `uncreatable-type` and
+`signal-handler-parameters` warnings that the first-party Omarchy plugins
+report too: qmllint cannot see Quickshell's C++ types or resolve singleton
+properties. Unused imports and genuine typos are what it is useful for.
 
 Adding support for another agent CLI is one entry in `AGENTS` in
 `helper/astronoma/agent.py`.
