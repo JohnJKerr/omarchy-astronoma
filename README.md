@@ -40,11 +40,11 @@ draws the full view, and both simply render what the helper returns.
 - **Retroactive history.** On first run Astronoma reconstructs the updates
   it can still evidence from package history, so it is useful immediately
   rather than after your next update.
-- **A package drill-down** — Upgraded / Installed / Removed, each showing
-  `name  old → new`, with a filter for updates that moved a thousand
-  packages.
+- **A package drill-down** — Upgraded / Installed / Removed, plus an AUR
+  lens over the same update, each showing `name  old → new`, with a filter
+  for updates that moved a thousand packages.
 - **Errors and warnings surfaced**, never silently dropped.
-- **An optional agent summary.** If Claude Code, Codex, or Gemini CLI is installed,
+- **An optional agent summary.** If Claude Code or Codex is installed,
   Astronoma can hand it the release notes plus your
   machine's package changes and ask what actually affects you.
 - **Offline-safe.** Release notes are cached; a failed refresh shows the
@@ -80,13 +80,20 @@ Changelog**:
 ~/.config/omarchy/plugins/astronoma.updates/bin/astronoma-menu-entry add
 ```
 
-Updating and removing are ordinary plugin commands:
+Updating is an ordinary plugin command:
 
 ```bash
 omarchy plugin update astronoma.updates
-# If you added the optional menu row, remove it while the helper still exists:
-~/.config/omarchy/plugins/astronoma.updates/bin/astronoma-menu-entry remove
-omarchy plugin remove astronoma.updates
+```
+
+To remove it, run `uninstall.sh`. It takes out the optional menu row before
+the plugin directory that row points at, which `omarchy plugin remove` on its
+own cannot do:
+
+```bash
+~/.config/omarchy/plugins/astronoma.updates/uninstall.sh
+# or, from a checkout:
+./uninstall.sh --purge    # also delete captured history and the release cache
 ```
 
 ### From a checkout
@@ -107,7 +114,7 @@ directory does not hot-reload, and the shell will keep running stale QML.
 ## Opening it
 
 On the default `unread` visibility the rocket leaves the bar once you have
-read an update. The flight log is still loaded and reachable:
+read an update. The flight log is still reachable, and is loaded on demand:
 
 - **Omarchy menu** — Update → Changelog, if you added the row above.
 - **A keybinding** in `~/.config/hypr/bindings.lua`:
@@ -153,30 +160,38 @@ Numbers need `--json`, or they land in `shell.json` as strings.
 
 Astronoma writes only to `~/.local/state/omarchy-updates/` (update records,
 agent summaries, and which update you have read) and `~/.cache/astronoma/`
-(the release cache). Removing the plugin leaves both; delete them by hand if
-you want them gone. Machine-specific state and summaries are stored with
-user-only permissions.
+(the release cache). Removing the plugin leaves both, so your history
+survives a reinstall; `uninstall.sh --purge` deletes them. Machine-specific
+state and summaries are stored with user-only permissions.
 
 Agent summaries are opt-in and run only when you press the summary button.
 They are disabled by default. The first press shows what data will be sent;
 a second, explicit **Enable and summarise** press records consent and starts
 the agent. No configuration-file editing is required. Revoke consent with
 `bin/astronoma agent-summaries disable`.
-Release notes and local update evidence are treated as untrusted input:
-Claude Code is launched with tools disabled. Codex runs ephemerally with its
-shell, hooks, plugins, browser, apps, skills, image tools, user configuration,
-and web search disabled; strict configuration validation makes unsupported
-controls fail closed. Gemini's non-interactive mode cannot approve tool calls.
-All supported agents run from an empty temporary directory.
+Release notes and local update evidence are treated as untrusted input, and
+are passed to the agent inside a quoted block whose delimiter the quoted text
+cannot close. Claude Code is launched with tools disabled. Codex runs
+ephemerally with its shell, hooks, plugins, browser, apps, skills, image
+tools, user configuration, and web search disabled; strict configuration
+validation makes unsupported controls fail closed. Both run from an empty
+temporary directory, which keeps project instruction files out of reach.
+
 Astronoma deliberately does not invoke general-purpose agents that cannot
-guarantee a non-tooling run.
+guarantee a non-tooling run. Gemini CLI is **not** supported for this reason:
+its non-interactive mode only gates the tools that ask for approval, while
+read-only ones — `web_fetch` and `google_web_search` among them — run
+unprompted, which is a network path out of text this feature treats as
+untrusted. Current releases deprecate `--allowed-tools` in favour of a policy
+engine whose rule format is not documented outside the bundle. It will be
+supported again when there is a verifiable way to start it with no tools.
 
 ## Data
 
 | Source | What it provides |
 |---|---|
 | `/var/log/pacman.log` | Exactly which packages changed, and when. World-readable and survives reboots, so it is what Astronoma groups into updates. |
-| `/tmp/omarchy-update.log` | Migrations, warnings and errors — what only the update transcript records. Cleared on reboot. |
+| `/tmp/omarchy-update.log` | Migrations, warnings and errors — what only the update transcript records. Cleared on reboot. It is a predictable path in a world-writable directory, so its contents are treated as untrusted: they are displayed as plain text and quoted, never interpreted. |
 | `~/.local/state/omarchy/migrations/` | Which migrations ran, recovered from marker mtimes when the transcript is gone. |
 | GitHub releases | Omarchy's user-facing release notes, cached locally. |
 
@@ -214,8 +229,9 @@ Add `--pretty` to any of them.
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 52 tests, no dependencies
+python3 -m unittest discover -s tests -t .   # 60 tests, no dependencies
 omarchy plugin validate .                    # manifest against the schema
+qmllint -I "$OMARCHY_PATH/shell" ./*.qml       # needs qt6-declarative
 ./install.sh && omarchy-restart-shell        # install and reload
 ```
 

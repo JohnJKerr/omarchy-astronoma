@@ -46,6 +46,7 @@ mkdir -p "$TARGET_DIR"
 # shell could not load.
 for entry in "$SOURCE_DIR"/manifest.json "$SOURCE_DIR"/README.md \
              "$SOURCE_DIR"/LICENSE "$SOURCE_DIR"/Model.js \
+             "$SOURCE_DIR"/uninstall.sh \
              "$SOURCE_DIR"/bin "$SOURCE_DIR"/helper "$SOURCE_DIR"/assets \
              "$SOURCE_DIR"/*.qml; do
   if [[ -e $entry ]]; then
@@ -66,6 +67,9 @@ for required in manifest.json BarWidget.qml Flightlog.qml Model.js bin/astronoma
   fi
 done
 chmod +x "$TARGET_DIR/bin/astronoma" "$TARGET_DIR/bin/astronoma-menu-entry"
+if [[ -f $TARGET_DIR/uninstall.sh ]]; then
+  chmod +x "$TARGET_DIR/uninstall.sh"
+fi
 
 if (( AGENT_SUMMARIES )); then
   "$TARGET_DIR/bin/astronoma" agent-summaries enable >/dev/null
