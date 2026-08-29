@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Add (or remove) Astronoma's row in the Omarchy menu.
+
+With the bar widget on its default `unread` visibility the rocket stands
+down once an update has been read, which leaves no obvious way back in.
+This puts a permanent row under Update, so the flight log is always
+reachable without memorising an IPC call or spending a keybinding.
+
+Edits ~/.config/omarchy/extensions/omarchy-menu.jsonc, which is JSONC and
+usually full of the user's own comments, so the row is spliced in as text
+rather than round-tripped through a JSON parser.
+"""
+
+import os
+import re
+import sys
+from pathlib import Path
+
+KEY = "update.astronoma"
+# The rocket, written as an escape rather than a literal: this row travels
+# through shells and editors on its way into a JSONC file, and a bare
+# multi-byte glyph does not reliably survive that trip.
+ICON = "\uf135"
+ROW = (
+    '  "%s": {"icon":"%s","label":"Changelog",'
+    '"description":"Astronoma - what the last Omarchy update changed",'
+    '"action":"omarchy-shell shell toggle astronoma.updates \'{}\'"},\n'
+    % (KEY, ICON)
+)
+
+
+def target() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "omarchy" / "extensions" / "omarchy-menu.jsonc"
+
+
+def add(path: Path) -> str:
+    text = path.read_text() if path.exists() else "{\n}\n"
+    if f'"{KEY}"' in text:
+        # Rewrite in place rather than skipping, so a reinstall picks up a
+        # changed label or action instead of leaving the old row behind.
+        updated = re.sub(
+            r'^[ \t]*"%s"\s*:.*\n' % re.escape(KEY), ROW, text, flags=re.M
+        )
+        if updated == text:
+            return "already present"
+        path.write_text(updated)
+        return "updated"
+    # Splice before the final closing brace so surrounding comments survive.
+    closing = text.rfind("}")
+    if closing == -1:
+        return "could not parse the menu file; left it alone"
+    updated = text[:closing] + ROW + text[closing:]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(updated)
+    return "added"
+
+
+def remove(path: Path) -> str:
+    if not path.exists():
+        return "nothing to remove"
+    text = path.read_text()
+    updated = re.sub(r'^[ \t]*"%s"\s*:.*\n' % re.escape(KEY), "", text, flags=re.M)
+    if updated == text:
+        return "nothing to remove"
+    path.write_text(updated)
+    return "removed"
+
+
+def main(argv) -> int:
+    path = target()
+    action = argv[1] if len(argv) > 1 else "add"
+    if action not in ("add", "remove"):
+        print("usage: astronoma-menu-entry [add|remove]", file=sys.stderr)
+        return 2
+    result = add(path) if action == "add" else remove(path)
+    print(f"{result}: {path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

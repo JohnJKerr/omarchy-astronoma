@@ -1,107 +1,175 @@
+# Astronoma
+
 ```
    /\
   /  \
-  |==|      Astronoma
-  |  |      The flight log for Omarchy
+  |==|      Omarchy is a rocket ship.
+  |  |      Astronoma is the flight log.
  /|  |\
 /_|__|_\
    ..
 ```
 
-Omarchy is a rocket ship. **Astronoma is the flight log.**
+Omarchy moves fast. Astronoma keeps track of what each update actually did
+to *this* machine — the version it moved you to, the releases you crossed,
+the packages it added, upgraded and removed, the migrations that ran, and
+anything that went wrong — and keeps that record long after
+`/tmp/omarchy-update.log` is gone.
 
-It answers one question, every time you open it:
+It optimises for one question:
 
 > I just updated Omarchy. What changed, and does any of it matter to me?
 
-Astronoma records what each update did to *this machine* — the Omarchy
-version it moved you to, the releases you crossed, the packages it added,
-upgraded and removed, the migrations that ran, and anything that went
-wrong — and keeps that history after the update log itself is gone.
+The QML is deliberately thin. A bundled `astronoma` helper does all the
+reading, parsing, persistence and fetching, and prints JSON;
+`BarWidget.qml` draws the bar rocket and its summary card, `Flightlog.qml`
+draws the full view, and both simply render what the helper returns.
 
-## What you get
+## Features
 
-**A bar widget** that shows a rocket when an update has landed that you
-have not read yet. Click it for a card with the version change, what the
-update did, and the headline changes from the releases you crossed.
+- **A bar rocket** that appears when an update has landed that you have not
+  read yet, and stands down once you have. Click for a card with the
+  version change, what the update did, and the headline changes from the
+  releases you crossed.
+- **A full flight log** — every captured update, the releases crossed with
+  their notes rendered natively, migrations, warnings, errors, and a
+  package breakdown.
+- **Update history that survives reboots.** The `/tmp` transcript is gone
+  after a restart, so parsed records are kept in
+  `~/.local/state/omarchy-updates/`.
+- **Retroactive history.** On first run Astronoma reconstructs the updates
+  it can still evidence from package history, so it is useful immediately
+  rather than after your next update.
+- **A package drill-down** — Upgraded / Installed / Removed, each showing
+  `name  old → new`, with a filter for updates that moved a thousand
+  packages.
+- **Errors and warnings surfaced**, never silently dropped.
+- **An optional agent summary.** If Claude Code, Codex, Gemini CLI or
+  opencode is installed, Astronoma can hand it the release notes plus your
+  machine's package changes and ask what actually affects you.
+- **Offline-safe.** Release notes are cached; a failed refresh shows the
+  cached copy and says so.
 
-**A full flight log** with every captured update: what it did, the agent
-summary, the full release notes for every release crossed, migrations, and
-a package breakdown at the foot of the page. The counts at the top link
-straight down to it — or press `p`. Pick Upgraded / Installed / Removed,
-and filter by name when an update moved a thousand packages. Open it from
-the card, or bind a key to:
-
-```bash
-omarchy-shell shell toggle astronoma.updates '{}'
-```
-
-**An optional impact summary.** If you have an agent CLI installed —
-Claude Code, Codex, Gemini CLI or opencode — Astronoma can hand it the
-release notes and your machine's package changes and ask what actually
-affects you. It is opt-in, cached once produced, and entirely optional:
-everything above works with no agent and no API key.
+Everything except the summary works with no agent, no API key, and no
+network.
 
 ## Install
 
 ```bash
-git clone https://github.com/kerrjohn/omarchy-astronoma.git
-cd omarchy-astronoma
-./install.sh
+omarchy plugin add https://github.com/JohnJKerr/omarchy-astronoma.git
+omarchy plugin enable astronoma.updates
 ```
 
-That copies the plugin to `~/.config/omarchy/plugins/astronoma.updates`,
-captures whatever update history the machine can still evidence, and
-enables it. If the bar does not pick it up, run `omarchy-restart-shell`.
+Plugins land disabled so you can read the code before running it — it runs
+unsandboxed inside `omarchy-shell`. Add `--enable --yes` to skip both
+prompts.
 
-To remove it:
+Astronoma needs `python3`, which Omarchy already installs. Nothing else.
+
+Optionally add a permanent row to the Omarchy menu under **Update →
+Changelog**:
 
 ```bash
+~/.config/omarchy/plugins/astronoma.updates/bin/astronoma-menu-entry add
+```
+
+Updating and removing are ordinary plugin commands:
+
+```bash
+omarchy plugin update astronoma.updates
 omarchy plugin remove astronoma.updates
 ```
 
-### Keys
+### From a checkout
 
-| Key   | Does                                    |
-|-------|-----------------------------------------|
-| `↑ ↓` | move through the update history         |
-| `p`   | jump to the package breakdown           |
-| `r`   | refresh, including Omarchy releases     |
-| `esc` | close                                   |
+To hack on it, clone anywhere and install a copy:
 
-Summarising has no shortcut on purpose — it costs a real agent run, so the
+```bash
+git clone https://github.com/JohnJKerr/omarchy-astronoma.git
+cd omarchy-astronoma
+./install.sh --menu
+```
+
+`install.sh` copies rather than symlinks on purpose: a symlinked plugin
+directory does not hot-reload, and the shell will keep running stale QML.
+
+## Opening it
+
+On the default `unread` visibility the rocket leaves the bar once you have
+read an update. The flight log is still loaded and reachable:
+
+- **Omarchy menu** — Update → Changelog, if you added the row above.
+- **A keybinding** in `~/.config/hypr/bindings.lua`:
+
+  ```lua
+  o.bind("SUPER + SHIFT + U", "Changelog", "omarchy-shell shell toggle astronoma.updates '{}'")
+  ```
+
+- **A terminal** — `omarchy-shell shell toggle astronoma.updates '{}'`.
+- Or keep the rocket in the bar permanently with `visibility: "always"`.
+
+## Interactions
+
+- **Bar icon**: left = summary card, right = full flight log, middle =
+  refresh.
+- **Card**: `f` opens the flight log, `r` refreshes, Esc closes.
+- **Flight log**: `↑`/`↓` or `j`/`k` move through history, `p` jumps to the
+  package breakdown, `r` refreshes, Esc closes.
+- **IPC**: `omarchy-shell astronoma <open|close|toggle|refresh>` for the
+  flight log, `omarchy-shell astronoma.bar <open|close|toggle|refresh|status>`
+  for the card.
+
+Summarising has no keyboard shortcut on purpose. The flight log takes
+exclusive keyboard focus, and a summary costs a real agent run, so the
 button is the only way to start one.
 
 ## Settings
 
-Set on the widget's entry in `~/.config/omarchy/shell.json`:
+Settings live on the widget's entry in `~/.config/omarchy/shell.json` and
+can be set with `omarchy bar set astronoma.updates <key> <value>`:
 
-| Key                  | Default    | What it does                                                        |
-|----------------------|------------|---------------------------------------------------------------------|
-| `visibility`         | `"unread"` | `unread` shows the rocket only while an unread update is waiting; `always` keeps it in the bar |
-| `refreshIntervalSec` | `900`      | How often the widget re-reads local update state                     |
+| Key | Default | What it does |
+|---|---|---|
+| `visibility` | `"unread"` | `"unread"` shows the rocket only while an update you have not opened is waiting; `"always"` keeps it in the bar |
+| `refreshIntervalSec` | `900` | How often the widget re-reads local update state. The network refresh happens when you open the card, not on this timer |
 
-## Where the data comes from
+```bash
+omarchy bar set astronoma.updates visibility always
+omarchy bar set astronoma.updates refreshIntervalSec 300 --json
+```
 
-| Source                     | What it provides                                          |
-|----------------------------|-----------------------------------------------------------|
-| `/var/log/pacman.log`      | Exactly which packages changed, and when. Survives reboots, so it is what Astronoma groups into updates. |
-| `/tmp/omarchy-update.log`  | Migrations, warnings and errors — the things only the update transcript records. Cleared on reboot. |
-| `~/.local/state/omarchy/migrations/` | Which migrations ran, recoverable from marker mtimes when the transcript is gone. |
-| GitHub releases            | Omarchy's user-facing release notes, cached locally.       |
+Numbers need `--json`, or they land in `shell.json` as strings.
+
+Astronoma writes only to `~/.local/state/omarchy-updates/` (update records,
+agent summaries, and which update you have read) and `~/.cache/astronoma/`
+(the release cache). Removing the plugin leaves both; delete them by hand if
+you want them gone.
+
+## Data
+
+| Source | What it provides |
+|---|---|
+| `/var/log/pacman.log` | Exactly which packages changed, and when. World-readable and survives reboots, so it is what Astronoma groups into updates. |
+| `/tmp/omarchy-update.log` | Migrations, warnings and errors — what only the update transcript records. Cleared on reboot. |
+| `~/.local/state/omarchy/migrations/` | Which migrations ran, recovered from marker mtimes when the transcript is gone. |
+| GitHub releases | Omarchy's user-facing release notes, cached locally. |
+
+pacman's log has no notion of "an update", so Astronoma groups transactions
+that run back to back into one — which is what an Omarchy update looks like
+from the log's point of view. The transcript is matched to the update it
+dates to by its mtime.
 
 Updates captured before Astronoma was installed are reconstructed from
-package history alone. Those are labelled **partial** in the UI, because
+package history alone. They are labelled **partial** in the UI, because
 their migrations are inferred and their warnings were never recorded.
 
-Nothing is written outside `~/.local/state/omarchy-updates/` and
-`~/.cache/astronoma/`, and Astronoma never changes packages — it is an
-update *explainer*, not a package manager.
+Astronoma never changes packages. It is an update *explainer*, not a
+package manager.
 
 ## The CLI
 
-The plugin is a thin presentation layer over a helper you can run
-yourself. Every command prints JSON.
+The plugin is a presentation layer over a helper you can run yourself.
+Every command prints JSON.
 
 ```bash
 bin/astronoma report          # everything the plugin renders
@@ -111,17 +179,21 @@ bin/astronoma show <id>       # one update in full
 bin/astronoma releases        # Omarchy releases (--refresh to fetch)
 bin/astronoma agents          # which agent CLIs are installed
 bin/astronoma summarise [id]  # impact summary via an installed agent
+bin/astronoma seen [id]       # mark an update as read
 ```
+
+Add `--pretty` to any of them.
 
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .
+python3 -m unittest discover -s tests -t .   # 40 tests, no dependencies
+omarchy plugin validate .                    # manifest against the schema
+./install.sh && omarchy-restart-shell        # install and reload
 ```
 
-Install a working copy with `./install.sh` and reload with
-`omarchy-shell shell rescanPlugins`. Note that a **symlinked** plugin
-directory does not hot-reload — `install.sh` deliberately copies.
+Adding support for another agent CLI is one entry in `AGENTS` in
+`helper/astronoma/agent.py`.
 
 ## Licence
 
