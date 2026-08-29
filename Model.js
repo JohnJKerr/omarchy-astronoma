@@ -68,6 +68,9 @@ function counts(record) {
     upgraded: count("upgraded"),
     installed: count("installed"),
     removed: count("removed"),
+    // A cross-cutting subset of the three above rather than a fourth total:
+    // an AUR package is still upgraded or installed like any other.
+    aur: ((record && record.aur) || []).length,
     migrations: ((record && record.migrations) || []).length,
     errors: ((record && record.errors) || []).length,
     warnings: ((record && record.warnings) || []).length,
@@ -85,6 +88,7 @@ function statLines(record) {
   if (c.upgraded) lines.push({ value: c.upgraded, label: plural(c.upgraded, "package") + " upgraded", tone: "normal", group: "upgraded" })
   if (c.installed) lines.push({ value: c.installed, label: plural(c.installed, "package") + " installed", tone: "normal", group: "installed" })
   if (c.removed) lines.push({ value: c.removed, label: plural(c.removed, "package") + " removed", tone: "normal", group: "removed" })
+  if (c.aur) lines.push({ value: c.aur, label: "from the AUR", tone: "normal", group: "aur" })
   if (c.migrations) lines.push({ value: c.migrations, label: plural(c.migrations, "migration"), tone: "normal" })
   if (c.warnings) lines.push({ value: c.warnings, label: plural(c.warnings, "warning"), tone: "warn" })
   lines.push({ value: c.errors, label: plural(c.errors, "error"), tone: c.errors ? "urgent" : "muted" })

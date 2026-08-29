@@ -444,6 +444,19 @@ Item {
                   wrapMode: Text.WordWrap
                 }
 
+                // The update finished, but a whole class of package went
+                // untouched. Worth saying plainly: it is the reason an
+                // expected AUR upgrade is missing from the lists below.
+                Text {
+                  visible: !!root.record && root.record.aurSkipped === true
+                  width: parent.width
+                  text: "The AUR was unavailable during this update, so AUR packages were skipped. Re-run the update to pick them up."
+                  color: Qt.darker(Color.accent, 1.05)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  wrapMode: Text.WordWrap
+                }
+
                 // -------------------------------------- stat block
                 Column {
                   visible: !!root.record

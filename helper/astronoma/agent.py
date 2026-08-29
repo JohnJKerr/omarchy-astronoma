@@ -190,6 +190,19 @@ def build_prompt(record: dict, releases: list) -> str:
     package_block("Packages installed", packages.get("installed") or [], 40)
     package_block("Packages upgraded", packages.get("upgraded") or [], 60)
 
+    aur = record.get("aur") or []
+    if aur:
+        # Named separately because a locally built package breaks differently
+        # from a repo one, and the user is the only person maintaining it.
+        lines.append(f"### Of those, built from the AUR ({len(aur)})")
+        lines.extend(f"- {item.get('name', '?')}" for item in aur[:40])
+        lines.append("")
+    if record.get("aurSkipped"):
+        lines.append(
+            "Note: the AUR was unavailable during this update, so AUR "
+            "packages were skipped entirely.\n"
+        )
+
     migrations = record.get("migrations") or []
     if migrations:
         lines.append(f"### Omarchy migrations that ran ({len(migrations)})")
