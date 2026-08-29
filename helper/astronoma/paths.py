@@ -6,6 +6,8 @@ reimporting anything.
 """
 
 import os
+import json
+import tempfile
 from pathlib import Path
 
 
@@ -58,3 +60,34 @@ def releases_cache() -> Path:
 
 def summaries_dir() -> Path:
     return state_dir() / "summaries"
+
+
+def private_directory(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.chmod(0o700)
+
+
+def atomic_json_write(target: Path, payload, private: bool = False) -> None:
+    """Atomically replace JSON using a unique sibling temporary file."""
+    if private:
+        private_directory(target.parent)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        if private:
+            os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w") as handle:
+            json.dump(payload, handle, indent=2 if private else None)
+            handle.write("\n" if private else "")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(target)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass

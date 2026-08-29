@@ -16,6 +16,10 @@ SCHEMA = 1
 _ID = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}$")
 
 
+def valid_id(identifier: str) -> bool:
+    return _ID.fullmatch(str(identifier or "")) is not None
+
+
 def record_id(when: datetime) -> str:
     """Sorts chronologically as a plain string, and stays readable."""
     return when.strftime("%Y-%m-%d-%H%M")
@@ -27,18 +31,14 @@ def _path_for(identifier: str):
 
 def save(record: dict) -> None:
     identifier = str(record.get("id") or "")
-    if not _ID.match(identifier):
+    if not valid_id(identifier):
         raise ValueError(f"refusing to write record with invalid id: {identifier!r}")
-    directory = paths.state_dir()
-    directory.mkdir(parents=True, exist_ok=True)
     target = _path_for(identifier)
-    temporary = target.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(record, indent=2) + "\n")
-    temporary.replace(target)
+    paths.atomic_json_write(target, record, private=True)
 
 
 def load(identifier: str) -> dict | None:
-    if not _ID.match(str(identifier or "")):
+    if not valid_id(identifier):
         return None
     try:
         data = json.loads(_path_for(identifier).read_text())
@@ -108,12 +108,8 @@ def mark_seen(identifier: str) -> str | None:
     current = seen_id()
     if current and current >= identifier:
         return current
-    directory = paths.state_dir()
-    directory.mkdir(parents=True, exist_ok=True)
     target = _seen_path()
-    temporary = target.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps({"id": identifier}) + "\n")
-    temporary.replace(target)
+    paths.atomic_json_write(target, {"id": identifier}, private=True)
     return identifier
 
 

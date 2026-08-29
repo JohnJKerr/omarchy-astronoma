@@ -321,6 +321,25 @@ class ReleaseTests(TempEnv):
 
 
 class AgentTests(TempEnv):
+    def test_cached_summary_rejects_unsafe_id(self):
+        from astronoma import agent
+        self.assertIsNone(agent.cached_summary("../../escape"))
+
+    def test_supported_agents_do_not_allow_unattended_tools(self):
+        from astronoma import agent
+        commands = {item.command: item.argv for item in agent.AGENTS}
+        self.assertNotIn("codex", commands)
+        self.assertNotIn("opencode", commands)
+        self.assertIn("--disallowedTools", commands["claude"])
+
+    def test_state_and_summary_files_are_private(self):
+        from astronoma import agent, capture, history
+        capture.run()
+        record_path = self.state / "2026-08-28-2300.json"
+        agent.save_summary("2026-08-28-2300", {"ok": True, "text": "private"})
+        self.assertEqual(record_path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.state.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((self.state / "summaries" / "2026-08-28-2300.json").stat().st_mode & 0o777, 0o600)
     def test_summarise_without_agent_reports_cleanly(self):
         from astronoma import agent, capture
         capture.run()

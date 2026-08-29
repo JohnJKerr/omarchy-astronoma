@@ -12,6 +12,7 @@ keeps every other view.
 import json
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 
@@ -34,10 +35,8 @@ class Agent:
 
 
 AGENTS = (
-    Agent("claude", "Claude Code", "claude", ("-p",)),
-    Agent("codex", "Codex", "codex", ("exec",)),
+    Agent("claude", "Claude Code", "claude", ("-p", "--disallowedTools", "*")),
     Agent("gemini", "Gemini CLI", "gemini", ("-p",)),
-    Agent("opencode", "opencode", "opencode", ("run",)),
 )
 
 
@@ -166,6 +165,8 @@ def build_prompt(record: dict, releases: list) -> str:
 
 
 def _summary_path(identifier: str):
+    if not history.valid_id(identifier):
+        raise ValueError("invalid update id")
     return paths.summaries_dir() / f"{identifier}.json"
 
 
@@ -178,12 +179,8 @@ def cached_summary(identifier: str) -> dict | None:
 
 
 def save_summary(identifier: str, payload: dict) -> None:
-    directory = paths.summaries_dir()
-    directory.mkdir(parents=True, exist_ok=True)
     target = _summary_path(identifier)
-    temporary = target.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(payload, indent=2) + "\n")
-    temporary.replace(target)
+    paths.atomic_json_write(target, payload, private=True)
 
 
 def summarise(identifier: str, releases: list, key: str | None = None,
@@ -209,9 +206,14 @@ def summarise(identifier: str, releases: list, key: str | None = None,
     prompt = build_prompt(record, releases)
     argv = [chosen.command, *chosen.argv, prompt]
     try:
-        completed = subprocess.run(
-            argv, capture_output=True, text=True, timeout=TIMEOUT,
-        )
+        # An empty working directory prevents project instruction/config files
+        # from being discovered. Supported agents either have tools explicitly
+        # disabled (Claude) or cannot approve tools in non-interactive mode
+        # (Gemini).
+        with tempfile.TemporaryDirectory(prefix="astronoma-summary-") as workdir:
+            completed = subprocess.run(
+                argv, capture_output=True, text=True, timeout=TIMEOUT, cwd=workdir,
+            )
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": f"{chosen.name} timed out after {TIMEOUT}s"}
     except OSError as error:
