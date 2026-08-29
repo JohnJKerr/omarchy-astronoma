@@ -291,9 +291,9 @@ def summarise(identifier: str, releases: list, key: str | None = None,
         argv.extend(["--disallowedTools", "*"])
     try:
         # An empty working directory prevents project instruction/config files
-        # from being discovered. Supported agents either have tools explicitly
-        # disabled (Claude) or cannot approve tools in non-interactive mode
-        # (Gemini).
+        # from being discovered. Claude's tools are explicitly disallowed;
+        # Codex ignores user config and rules and disables its tool features
+        # above, with strict validation making unknown controls fail closed.
         with tempfile.TemporaryDirectory(prefix="astronoma-summary-") as workdir:
             completed = subprocess.run(
                 argv, capture_output=True, text=True, timeout=TIMEOUT, cwd=workdir,

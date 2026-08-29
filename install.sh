@@ -36,6 +36,14 @@ command -v python3 >/dev/null || {
   exit 1
 }
 
+# Running the installed copy of this script would otherwise remove its own
+# source tree before the copy begins, leaving a broken or empty plugin behind.
+if [[ $(realpath -m -- "$SOURCE_DIR") == $(realpath -m -- "$TARGET_DIR") ]]; then
+  echo "Refusing to install over the directory this script is running from: $SOURCE_DIR" >&2
+  echo "Run install.sh from a separate checkout instead." >&2
+  exit 1
+fi
+
 echo "Installing Astronoma to $TARGET_DIR"
 # A symlinked plugin does not hot-reload, so always install a real copy.
 rm -rf "$TARGET_DIR"
@@ -102,6 +110,7 @@ if command -v omarchy-shell >/dev/null && omarchy-shell shell ping >/dev/null 2>
     if (( ENABLE )); then
       echo "Installed, but could not enable it automatically." >&2
       echo "Run: omarchy plugin enable $PLUGIN_ID" >&2
+      exit 1
     fi
   fi
   echo "Installed. If the bar does not show it, run: omarchy-restart-shell"

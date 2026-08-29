@@ -596,6 +596,16 @@ class CliTests(TempEnv):
         code, _ = self._run(["capture", "--pretty"])
         self.assertEqual(code, 0)
 
+    def test_pretty_accepted_before_subcommand(self):
+        import io
+        from contextlib import redirect_stdout
+        from astronoma import cli
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = cli.main(["--pretty", "agents"])
+        self.assertEqual(code, 0)
+        self.assertGreater(len(output.getvalue().splitlines()), 1)
+
 
 class MenuEntryTests(unittest.TestCase):
     def test_add_preserves_valid_object_without_trailing_comma_and_remove_reverses_it(self):
@@ -720,6 +730,46 @@ class InstallationTests(unittest.TestCase):
                              "Model.js", "Service.qml", "bin/astronoma"):
                 self.assertTrue((installed / required).is_file(), required)
             self.assertEqual(list(installed.rglob("__pycache__")), [])
+
+    def test_install_fails_when_plugin_cannot_be_enabled(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            env = self._env(temporary)
+            stubs = Path(temporary) / "stub-bin"
+            (stubs / "omarchy-shell").write_text(
+                "#!/bin/sh\n[ \"$1 $2\" = \"shell ping\" ] && exit 0\nexit 0\n"
+            )
+            (stubs / "omarchy-shell").chmod(0o755)
+            (stubs / "sleep").write_text("#!/bin/sh\nexit 0\n")
+            (stubs / "sleep").chmod(0o755)
+
+            completed = subprocess.run(
+                [root / "install.sh"], cwd=root, env=env,
+                capture_output=True, text=True,
+            )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("could not enable", completed.stderr)
+
+    def test_install_refuses_to_delete_its_own_source_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            env = self._env(temporary)
+            installed = (Path(temporary) / "config" / "omarchy" / "plugins"
+                         / "io.github.johnjkerr.astronoma")
+            installed.mkdir(parents=True)
+            script = installed / "install.sh"
+            script.write_bytes((root / "install.sh").read_bytes())
+            script.chmod(0o755)
+
+            completed = subprocess.run(
+                [script], cwd=installed, env=env,
+                capture_output=True, text=True,
+            )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("Refusing to install", completed.stderr)
+            self.assertTrue(script.exists())
 
 
 if __name__ == "__main__":

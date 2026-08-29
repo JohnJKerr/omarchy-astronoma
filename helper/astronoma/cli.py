@@ -24,7 +24,8 @@ def main(argv=None) -> int:
         description="Flight log for Omarchy updates.",
     )
     parser.add_argument("--version", action="version", version=__version__)
-    parser.add_argument("--pretty", action="store_true", default=False, help="indent JSON output")
+    parser.add_argument("--pretty", action="store_true", default=False,
+                        dest="global_pretty", help="indent JSON output")
 
     # Also accepted after the subcommand, so `astronoma report --pretty`
     # works as naturally as `astronoma --pretty report`.
@@ -76,7 +77,7 @@ def main(argv=None) -> int:
 
     args = parser.parse_args(argv)
     # The subcommand flag wins when given; otherwise fall back to the global.
-    pretty = bool(args.pretty)
+    pretty = bool(args.global_pretty or args.pretty)
 
     if args.command == "capture":
         return _emit(capture.run(force=args.force), pretty)

@@ -215,7 +215,7 @@ package manager.
 ## The CLI
 
 The plugin is a presentation layer over a helper you can run yourself.
-Every command prints JSON.
+Every operational command prints JSON (`--version` and usage errors are plain text).
 
 ```bash
 bin/astronoma report          # everything the plugin renders
@@ -234,7 +234,7 @@ Add `--pretty` to any of them.
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 60 tests, no dependencies
+python3 -m unittest discover -s tests -t .   # 64 tests, no dependencies
 omarchy plugin validate .                    # manifest against the schema
 qmllint -I "$OMARCHY_PATH/shell" ./*.qml       # needs qt6-declarative
 ./install.sh && omarchy-restart-shell        # install and reload
