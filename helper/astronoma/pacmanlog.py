@@ -99,13 +99,14 @@ def _looks_like_sysupgrade(command: str) -> bool:
 
 def _parse_timestamp(raw: str) -> datetime | None:
     try:
-        return datetime.fromisoformat(raw)
+        parsed = datetime.fromisoformat(raw)
+        return parsed.astimezone() if parsed.tzinfo else parsed.astimezone()
     except ValueError:
         pass
     # Pre-5.x pacman wrote [2019-01-01 12:00] with no timezone.
     for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S%z"):
         try:
-            return datetime.strptime(raw, fmt)
+            return datetime.strptime(raw, fmt).astimezone()
         except ValueError:
             continue
     return None

@@ -90,6 +90,14 @@ class VersionTests(unittest.TestCase):
 
 
 class PacmanLogTests(TempEnv):
+    def test_mixed_legacy_and_modern_timestamps_are_grouped(self):
+        from astronoma import pacmanlog
+        self.pacman.write_text(
+            "[2026-08-17 09:00] [PACMAN] Running 'pacman -Syu'\n"
+            "[2026-08-17 09:01] [ALPM] upgraded omarchy (3.8.4-1 -> 4.0.0-1)\n"
+            "[2026-08-17T09:02:00+0100] [ALPM] upgraded quickshell (1-1 -> 2-1)\n"
+        )
+        self.assertEqual(len(pacmanlog.sessions()), 1)
     def test_sessions_split_on_time_gap(self):
         from astronoma import pacmanlog
         sessions = pacmanlog.sessions()
