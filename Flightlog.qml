@@ -106,11 +106,15 @@ Item {
     id: detailService
     property var record: null
     property string loadedId: ""
+    property string requestedId: ""
+    property string activeId: ""
 
     function load(id) {
-      if (!id || detailProcess.running) return
-      loadedId = String(id)
-      detailProcess.command = [detailService.helper, "show", String(id)]
+      if (!id) return
+      requestedId = String(id)
+      if (detailProcess.running) return
+      activeId = requestedId
+      detailProcess.command = [detailService.helper, "show", activeId]
       detailProcess.running = true
     }
 
@@ -120,13 +124,18 @@ Item {
       command: []
       stdout: StdioCollector { id: detailOut; waitForEnd: true }
       onExited: function(exitCode) {
-        if (exitCode !== 0) { detailService.record = null; return }
-        try {
-          var parsed = JSON.parse(String(detailOut.text || ""))
-          detailService.record = parsed && parsed.ok ? parsed : null
-        } catch (error) {
-          detailService.record = null
+        if (detailService.activeId === detailService.requestedId) {
+          if (exitCode !== 0) detailService.record = null
+          else try {
+            var parsed = JSON.parse(String(detailOut.text || ""))
+            detailService.record = parsed && parsed.ok ? parsed : null
+            if (detailService.record) detailService.loadedId = detailService.activeId
+          } catch (error) {
+            detailService.record = null
+          }
         }
+        if (detailService.requestedId !== detailService.activeId)
+          Qt.callLater(function() { detailService.load(detailService.requestedId) })
       }
     }
 
@@ -135,8 +144,6 @@ Item {
       else root.summaryError = payload && payload.error ? payload.error : "The agent did not return a summary"
     }
   }
-
-  Component.onCompleted: service.refresh(false)
 
   IpcHandler {
     target: "astronoma"
