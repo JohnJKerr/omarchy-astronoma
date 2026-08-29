@@ -20,6 +20,8 @@ It optimises for one question:
 
 > I just updated Omarchy. What changed, and does any of it matter to me?
 
+![The Astronoma flight log — update history on the left, the selected update in full on the right](preview.png)
+
 The QML is deliberately thin. A bundled `astronoma` helper does all the
 reading, parsing, persistence and fetching, and prints JSON;
 `BarWidget.qml` draws the bar rocket and its summary card, `Flightlog.qml`
