@@ -67,6 +67,18 @@ def private_directory(directory: Path) -> None:
     directory.chmod(0o700)
 
 
+def harden_private_tree(directory: Path) -> None:
+    """Repair permissions left by versions that relied on the user umask."""
+    private_directory(directory)
+    for entry in directory.rglob("*"):
+        try:
+            if entry.is_symlink():
+                continue
+            entry.chmod(0o700 if entry.is_dir() else 0o600)
+        except OSError:
+            continue
+
+
 def atomic_json_write(target: Path, payload, private: bool = False) -> None:
     """Atomically replace JSON using a unique sibling temporary file."""
     if private:

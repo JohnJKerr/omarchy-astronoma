@@ -121,7 +121,7 @@ def _log_matches(session: pacmanlog.Session, log: updatelog.UpdateLog) -> bool:
 @contextmanager
 def _capture_lock():
     directory = paths.state_dir()
-    paths.private_directory(directory)
+    paths.harden_private_tree(directory)
     with (directory / ".capture.lock").open("a+") as handle:
         os.fchmod(handle.fileno(), 0o600)
         fcntl.flock(handle, fcntl.LOCK_EX)

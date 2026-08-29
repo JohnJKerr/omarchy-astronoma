@@ -173,6 +173,15 @@ class UpdateLogTests(unittest.TestCase):
 
 
 class CaptureTests(TempEnv):
+    def test_capture_repairs_permissions_on_existing_state(self):
+        from astronoma import capture
+        self.state.mkdir(parents=True)
+        old = self.state / "old.json"
+        old.write_text("{}")
+        old.chmod(0o644)
+        capture.run()
+        self.assertEqual(old.stat().st_mode & 0o777, 0o600)
+
     def test_force_preserves_transcript_evidence_for_older_records(self):
         from astronoma import capture, history
         self._stage_transcript(finished="2026-08-17T09:00:30+01:00")
