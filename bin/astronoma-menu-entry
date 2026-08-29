@@ -50,7 +50,19 @@ def add(path: Path) -> str:
     closing = text.rfind("}")
     if closing == -1:
         return "could not parse the menu file; left it alone"
-    updated = text[:closing] + ROW + text[closing:]
+    prefix = text[:closing]
+    # JSONC permits trailing commas, but users often omit one on the final
+    # property. Add the separator to that property before inserting ours.
+    significant = list(re.finditer(r"(?m)^(?!\s*(?://|/\*|\*)).+\S\s*$", prefix))
+    if significant:
+        line = significant[-1]
+        content = line.group(0)
+        code, marker, comment = content.partition("//")
+        if code.rstrip()[-1:] not in ("{", ","):
+            code = code.rstrip() + ","
+            content = code + ((" " + marker + comment) if marker else "")
+            prefix = prefix[:line.start()] + content + "\n" + prefix[line.end():].lstrip("\n")
+    updated = prefix + ROW + text[closing:]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(updated)
     return "added"
@@ -63,6 +75,9 @@ def remove(path: Path) -> str:
     updated = re.sub(r'^[ \t]*"%s"\s*:.*\n' % re.escape(KEY), "", text, flags=re.M)
     if updated == text:
         return "nothing to remove"
+    # Restore a conventional non-trailing final property when our inserted
+    # row was the only reason it needed a comma.
+    updated = re.sub(r",([ \t]*(?://[^\n]*)?\n[ \t]*})", r"\1", updated, count=1)
     path.write_text(updated)
     return "removed"
 

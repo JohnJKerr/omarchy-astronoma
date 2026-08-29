@@ -10,6 +10,8 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+import subprocess
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -458,6 +460,22 @@ class CliTests(TempEnv):
     def test_pretty_accepted_after_subcommand(self):
         code, _ = self._run(["capture", "--pretty"])
         self.assertEqual(code, 0)
+
+
+class MenuEntryTests(unittest.TestCase):
+    def test_add_preserves_valid_object_without_trailing_comma_and_remove_reverses_it(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / "omarchy" / "extensions" / "omarchy-menu.jsonc"
+            config.parent.mkdir(parents=True)
+            config.write_text('{\n  "existing": {"label":"Existing"}\n}\n')
+            env = {**os.environ, "XDG_CONFIG_HOME": temporary}
+            script = str(Path(__file__).resolve().parents[1] / "bin" / "astronoma-menu-entry")
+            subprocess.run([script, "add"], env=env, check=True, capture_output=True)
+            added = config.read_text()
+            self.assertIn('"existing": {"label":"Existing"},', added)
+            json.loads(re.sub(r",\s*}", "\n}", added))
+            subprocess.run([script, "remove"], env=env, check=True, capture_output=True)
+            self.assertEqual(json.loads(config.read_text()), {"existing": {"label": "Existing"}})
 
 
 if __name__ == "__main__":
