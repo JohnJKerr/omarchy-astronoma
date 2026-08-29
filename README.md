@@ -84,11 +84,20 @@ Changelog**:
 ~/.config/omarchy/plugins/io.github.johnjkerr.astronoma/bin/astronoma-menu-entry add
 ```
 
-Updating is an ordinary plugin command:
+Updating is an ordinary plugin command, followed by a shell restart:
 
 ```bash
 omarchy plugin update io.github.johnjkerr.astronoma
+omarchy-restart-shell
 ```
+
+The restart is not optional. `plugin update` pulls and asks the shell to
+rescan, and the flight log picks the new version up — but bar widgets are
+exempt from that reload: the shell reuses a widget's existing component
+whenever its entry point path is unchanged, and only refreshes the metadata
+around it. Without the restart you get the new flight log and the previous
+version's bar rocket. A first install needs no restart, because there is no
+earlier component to reuse.
 
 To remove it, run `uninstall.sh`. It takes out the optional menu row before
 the plugin directory that row points at, which `omarchy plugin remove` on its
