@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "John Kerr",
   "license": "MIT",
-  "description": "Omarchy is a rocket ship. Astronoma is the flight log. It tracks what changed on this machine between updates — releases crossed, package changes, migrations, warnings — with an optional agent summary of what actually matters.",
+  "description": "A local flight log for Omarchy updates: releases crossed, package changes, migrations, warnings, and optional safe agent summaries.",
   "kinds": ["bar-widget", "overlay"],
   "keepLoaded": true,
   "entryPoints": {

@@ -44,8 +44,8 @@ draws the full view, and both simply render what the helper returns.
   `name  old → new`, with a filter for updates that moved a thousand
   packages.
 - **Errors and warnings surfaced**, never silently dropped.
-- **An optional agent summary.** If Claude Code, Codex, Gemini CLI or
-  opencode is installed, Astronoma can hand it the release notes plus your
+- **An optional agent summary.** If Claude Code or Gemini CLI is installed,
+  Astronoma can hand it the release notes plus your
   machine's package changes and ask what actually affects you.
 - **Offline-safe.** Release notes are cached; a failed refresh shows the
   cached copy and says so.
@@ -77,6 +77,8 @@ Updating and removing are ordinary plugin commands:
 
 ```bash
 omarchy plugin update astronoma.updates
+# If you added the optional menu row, remove it while the helper still exists:
+~/.config/omarchy/plugins/astronoma.updates/bin/astronoma-menu-entry remove
 omarchy plugin remove astronoma.updates
 ```
 
@@ -143,7 +145,15 @@ Numbers need `--json`, or they land in `shell.json` as strings.
 Astronoma writes only to `~/.local/state/omarchy-updates/` (update records,
 agent summaries, and which update you have read) and `~/.cache/astronoma/`
 (the release cache). Removing the plugin leaves both; delete them by hand if
-you want them gone.
+you want them gone. Machine-specific state and summaries are stored with
+user-only permissions.
+
+Agent summaries are opt-in and run only when you press the summary button.
+Release notes and local update evidence are treated as untrusted input:
+Claude Code is launched with tools disabled, while Gemini's non-interactive
+mode cannot approve tool calls. Both run from an empty temporary directory.
+Astronoma deliberately does not invoke general-purpose agents that cannot
+guarantee a non-tooling run.
 
 ## Data
 
@@ -187,7 +197,7 @@ Add `--pretty` to any of them.
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 40 tests, no dependencies
+python3 -m unittest discover -s tests -t .   # 47 tests, no dependencies
 omarchy plugin validate .                    # manifest against the schema
 ./install.sh && omarchy-restart-shell        # install and reload
 ```
