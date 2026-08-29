@@ -20,6 +20,7 @@ Item {
   property bool opened: false
   property int selectedIndex: 0
   property string summaryError: ""
+  property bool confirmingAgentEnable: false
 
   // Shares the [menu] surface tokens, so a theme that styles the Omarchy
   // menu styles the flight log to match.
@@ -86,8 +87,12 @@ Item {
 
   function requestSummary(force) {
     if (!record || !service.hasAgent || detailService.summaryRunning) return
+    if (!service.agentSummariesEnabled && !root.confirmingAgentEnable) {
+      root.confirmingAgentEnable = true
+      return
+    }
     summaryError = ""
-    detailService.summarise(record.id, force === true)
+    detailService.summarise(record.id, force === true, !service.agentSummariesEnabled)
   }
 
   Service {
@@ -524,11 +529,23 @@ Item {
                     enabled: !detailService.summaryRunning
                     text: {
                       if (detailService.summaryRunning) return "Summarising…"
+                      if (!service.agentSummariesEnabled)
+                        return root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries"
                       var has = root.record && root.record.summary && root.record.summary.text
                       return has ? "Summarise again" : "Summarise what changed for me"
                     }
                     onClicked: root.requestSummary(
                       !!(root.record && root.record.summary && root.record.summary.text))
+                  }
+
+                  Text {
+                    visible: root.confirmingAgentEnable && !service.agentSummariesEnabled
+                    width: parent.width
+                    text: "This sends the update record and GitHub release notes to your installed agent. Agent tools are disabled and it runs from an empty temporary directory."
+                    color: root.faint
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    wrapMode: Text.WordWrap
                   }
 
                   Text {

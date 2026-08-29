@@ -61,11 +61,18 @@ def main(argv=None) -> int:
 
     sub.add_parser("agents", parents=[common], help="installed agent CLIs")
 
+    consent_cmd = sub.add_parser("agent-summaries", parents=[common],
+                                 help="inspect or revoke agent-summary consent")
+    consent_cmd.add_argument("state", choices=("status", "enable", "disable"),
+                             nargs="?", default="status")
+
     summarise_cmd = sub.add_parser("summarise", parents=[common], help="agent impact summary")
     summarise_cmd.add_argument("id", nargs="?", help="defaults to the latest update")
     summarise_cmd.add_argument("--agent", dest="agent_key", default=None)
     summarise_cmd.add_argument("--refresh", action="store_true",
                                help="regenerate even if one is cached")
+    summarise_cmd.add_argument("--enable", action="store_true",
+                               help="record consent and enable agent summaries")
 
     args = parser.parse_args(argv)
     # The subcommand flag wins when given; otherwise fall back to the global.
@@ -110,7 +117,19 @@ def main(argv=None) -> int:
     if args.command == "agents":
         return _emit({"agents": agent.available()}, pretty)
 
+    if args.command == "agent-summaries":
+        if args.state != "status":
+            agent.set_enabled(args.state == "enable")
+        return _emit({"ok": True, "enabled": agent.enabled()}, pretty)
+
     if args.command == "summarise":
+        if args.enable:
+            agent.set_enabled(True)
+        if not agent.enabled():
+            return _emit({
+                "ok": False,
+                "error": "Agent summaries are disabled; explicitly enable them first",
+            }, pretty)
         identifier = args.id
         if not identifier:
             latest = history.latest()

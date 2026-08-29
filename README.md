@@ -149,6 +149,10 @@ you want them gone. Machine-specific state and summaries are stored with
 user-only permissions.
 
 Agent summaries are opt-in and run only when you press the summary button.
+They are disabled by default. The first press shows what data will be sent;
+a second, explicit **Enable and summarise** press records consent and starts
+the agent. No configuration-file editing is required. Revoke consent with
+`bin/astronoma agent-summaries disable`.
 Release notes and local update evidence are treated as untrusted input:
 Claude Code is launched with tools disabled, while Gemini's non-interactive
 mode cannot approve tool calls. Both run from an empty temporary directory.
@@ -188,6 +192,7 @@ bin/astronoma history         # captured updates, newest first
 bin/astronoma show <id>       # one update in full
 bin/astronoma releases        # Omarchy releases (--refresh to fetch)
 bin/astronoma agents          # which agent CLIs are installed
+bin/astronoma agent-summaries # consent status; add enable or disable
 bin/astronoma summarise [id]  # impact summary via an installed agent
 bin/astronoma seen [id]       # mark an update as read
 ```
@@ -197,7 +202,7 @@ Add `--pretty` to any of them.
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 48 tests, no dependencies
+python3 -m unittest discover -s tests -t .   # 51 tests, no dependencies
 omarchy plugin validate .                    # manifest against the schema
 ./install.sh && omarchy-restart-shell        # install and reload
 ```

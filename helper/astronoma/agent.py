@@ -35,9 +35,25 @@ class Agent:
 
 
 AGENTS = (
-    Agent("claude", "Claude Code", "claude", ("-p", "--disallowedTools", "*")),
+    Agent("claude", "Claude Code", "claude", ("-p",)),
     Agent("gemini", "Gemini CLI", "gemini", ("-p",)),
 )
+
+
+def _consent_path():
+    return paths.state_dir() / "agent-consent.json"
+
+
+def enabled() -> bool:
+    try:
+        payload = json.loads(_consent_path().read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(payload, dict) and payload.get("enabled") is True
+
+
+def set_enabled(value: bool) -> None:
+    paths.atomic_json_write(_consent_path(), {"enabled": bool(value)}, private=True)
 
 
 def available() -> list[dict]:
@@ -208,6 +224,10 @@ def summarise(identifier: str, releases: list, key: str | None = None,
 
     prompt = build_prompt(record, releases)
     argv = [chosen.command, *chosen.argv, prompt]
+    if chosen.key == "claude":
+        # This option accepts a list, so it must follow the positional prompt
+        # or the prompt itself is consumed as another tool pattern.
+        argv.extend(["--disallowedTools", "*"])
     try:
         # An empty working directory prevents project instruction/config files
         # from being discovered. Supported agents either have tools explicitly

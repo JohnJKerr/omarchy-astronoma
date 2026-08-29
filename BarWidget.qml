@@ -45,6 +45,7 @@ Panel {
     ? Model.highlights(latest.crossed || [], 4)
     : Model.highlights(service.recentReleases, 4)
   readonly property string statusNote: Model.statusNote(service.releaseStatus)
+  property bool confirmingAgentEnable: false
 
   function openFlightlog() {
     root.close()
@@ -281,16 +282,36 @@ Panel {
             fontFamily: root.fontFamily
             text: service.summaryRunning
               ? "Summarising…"
-              : (root.latest && root.latest.summary && root.latest.summary.text
+              : (!service.agentSummariesEnabled
+                  ? (root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries")
+                : (root.latest && root.latest.summary && root.latest.summary.text
                   ? "Read the summary"
-                  : "Summarise what changed for me")
+                  : "Summarise what changed for me"))
             enabled: !service.summaryRunning
             function trigger() {
               if (!visible || service.summaryRunning) return
+              if (!service.agentSummariesEnabled) {
+                if (!root.confirmingAgentEnable) {
+                  root.confirmingAgentEnable = true
+                  return
+                }
+                service.summarise(root.latest ? root.latest.id : "", false, true)
+                return
+              }
               if (root.latest && root.latest.summary && root.latest.summary.text) root.openFlightlog()
-              else service.summarise(root.latest ? root.latest.id : "", false)
+              else service.summarise(root.latest ? root.latest.id : "", false, false)
             }
             onClicked: trigger()
+          }
+
+          Text {
+            visible: root.confirmingAgentEnable && !service.agentSummariesEnabled
+            width: parent.width
+            text: "This sends the update record and GitHub release notes to your installed agent. Agent tools are disabled and it runs from an empty temporary directory."
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
           }
 
           Button {

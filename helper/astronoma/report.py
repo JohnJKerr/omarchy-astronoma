@@ -59,6 +59,7 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
         # Drives whether the bar asks for attention at all.
         "unread": history.unread_id(),
         "agents": agent.available(),
+        "agentSummariesEnabled": agent.enabled(),
         "latest": None,
     }
 
@@ -98,4 +99,5 @@ def detail(identifier: str, refresh: bool = False) -> dict:
         "releaseStatus": status,
         "summary": agent.cached_summary(identifier),
         "agents": agent.available(),
+        "agentSummariesEnabled": agent.enabled(),
     }

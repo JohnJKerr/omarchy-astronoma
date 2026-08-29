@@ -35,6 +35,7 @@ Item {
   readonly property var releaseStatus: report && report.releases ? (report.releases.status || ({})) : ({})
   readonly property var agents: report && report.agents ? report.agents : []
   readonly property bool hasAgent: agents.length > 0
+  readonly property bool agentSummariesEnabled: report && report.agentSummariesEnabled === true
   readonly property string installed: report && report.omarchy ? (report.omarchy.installed || "") : ""
   readonly property string unreadId: report && report.unread ? String(report.unread) : ""
   readonly property bool hasUnread: unreadId !== ""
@@ -62,12 +63,13 @@ Item {
     seenProcess.running = true
   }
 
-  function summarise(id, refresh) {
+  function summarise(id, refresh, enable) {
     if (summaryProcess.running) return
     summaryRunning = true
     var argv = [helper, "summarise"]
     if (id) argv.push(String(id))
     if (refresh) argv.push("--refresh")
+    if (enable) argv.push("--enable")
     summaryProcess.command = argv
     summaryProcess.running = true
   }

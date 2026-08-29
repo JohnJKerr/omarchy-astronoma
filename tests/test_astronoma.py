@@ -362,6 +362,12 @@ class ReleaseTests(TempEnv):
 
 
 class AgentTests(TempEnv):
+    def test_agent_summaries_are_disabled_until_explicitly_enabled(self):
+        from astronoma import agent
+        self.assertFalse(agent.enabled())
+        agent.set_enabled(True)
+        self.assertTrue(agent.enabled())
+
     def test_cached_summary_rejects_unsafe_id(self):
         from astronoma import agent
         self.assertIsNone(agent.cached_summary("../../escape"))
@@ -371,7 +377,7 @@ class AgentTests(TempEnv):
         commands = {item.command: item.argv for item in agent.AGENTS}
         self.assertNotIn("codex", commands)
         self.assertNotIn("opencode", commands)
-        self.assertIn("--disallowedTools", commands["claude"])
+        self.assertEqual(commands["claude"], ("-p",))
 
     def test_state_and_summary_files_are_private(self):
         from astronoma import agent, capture, history
@@ -445,6 +451,19 @@ class ReportTests(TempEnv):
 
 
 class CliTests(TempEnv):
+    def test_agent_summary_consent_can_be_revoked(self):
+        code, payload = self._run(["agent-summaries", "enable"])
+        self.assertEqual((code, payload["enabled"]), (0, True))
+        code, payload = self._run(["agent-summaries", "disable"])
+        self.assertEqual((code, payload["enabled"]), (0, False))
+
+    def test_summarise_requires_explicit_enablement(self):
+        from astronoma import capture
+        capture.run()
+        code, payload = self._run(["summarise", "2026-08-28-2300"])
+        self.assertEqual(code, 1)
+        self.assertIn("disabled", payload["error"].lower())
+
     def _run(self, argv):
         import io
         import contextlib
