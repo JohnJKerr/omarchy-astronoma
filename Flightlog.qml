@@ -74,6 +74,21 @@ Item {
     select(Math.max(0, Math.min(rows.length - 1, selectedIndex + delta)))
   }
 
+  function scrollDetail(pages) {
+    if (!detailFlick) return
+    var maximum = Math.max(0, detailFlick.contentHeight - detailFlick.height)
+    var step = Math.max(Style.space(120), detailFlick.height * 0.85)
+    detailFlick.contentY = Math.max(0, Math.min(maximum,
+      detailFlick.contentY + pages * step))
+  }
+
+  function scrollDetailToEnd(end) {
+    if (!detailFlick) return
+    detailFlick.contentY = end
+      ? Math.max(0, detailFlick.contentHeight - detailFlick.height)
+      : 0
+  }
+
   function showPackages(group) {
     if (!group) return
     packageSection.show(group)
@@ -210,6 +225,14 @@ Item {
           if (event.key === Qt.Key_Escape) { root.close(); event.accepted = true }
           else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) { root.moveSelection(1); event.accepted = true }
           else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) { root.moveSelection(-1); event.accepted = true }
+          else if (event.key === Qt.Key_PageDown) { root.scrollDetail(1); event.accepted = true }
+          else if (event.key === Qt.Key_PageUp) { root.scrollDetail(-1); event.accepted = true }
+          else if (event.key === Qt.Key_Space) {
+            root.scrollDetail((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+            event.accepted = true
+          }
+          else if (event.key === Qt.Key_Home) { root.scrollDetailToEnd(false); event.accepted = true }
+          else if (event.key === Qt.Key_End) { root.scrollDetailToEnd(true); event.accepted = true }
           else if (event.key === Qt.Key_R) { service.refresh(true); event.accepted = true }
           else if (event.key === Qt.Key_P) { root.showPackages(packageSection.group); event.accepted = true }
           // Summarising deliberately has no single-key shortcut. This surface
@@ -279,7 +302,7 @@ Item {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            text: "↑↓ select · p packages · r refresh · esc close"
+            text: "↑↓ select · pgup/pgdn or space scroll · home/end jump · p packages · r refresh · esc close"
             color: root.faint
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
