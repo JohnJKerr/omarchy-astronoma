@@ -73,6 +73,17 @@ Item {
     select(Math.max(0, Math.min(rows.length - 1, selectedIndex + delta)))
   }
 
+  function showPackages(group) {
+    if (!group) return
+    packageSection.show(group)
+    Qt.callLater(function() {
+      if (!packageSection || !detailFlick) return
+      var point = packageSection.mapToItem(detailFlick.contentItem, 0, 0)
+      var maxY = Math.max(0, detailFlick.contentHeight - detailFlick.height)
+      detailFlick.contentY = Math.max(0, Math.min(maxY, point.y - Style.space(12)))
+    })
+  }
+
   function requestSummary(force) {
     if (!record || !service.hasAgent || detailService.summaryRunning) return
     summaryError = ""
@@ -181,6 +192,7 @@ Item {
           else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) { root.moveSelection(1); event.accepted = true }
           else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) { root.moveSelection(-1); event.accepted = true }
           else if (event.key === Qt.Key_R) { service.refresh(true); event.accepted = true }
+          else if (event.key === Qt.Key_P) { root.showPackages(packageSection.group); event.accepted = true }
           // Summarising deliberately has no single-key shortcut. This surface
           // takes exclusive keyboard focus, so one stray key would otherwise
           // spend an agent run the user never asked for.
@@ -248,7 +260,7 @@ Item {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            text: "↑↓ select · r refresh · esc close"
+            text: "↑↓ select · p packages · r refresh · esc close"
             color: root.faint
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -405,7 +417,31 @@ Item {
                       tone: modelData.tone
                       foreground: root.foreground
                       fontFamily: root.fontFamily
+                      navigable: !!modelData.group
+                      onActivated: root.showPackages(modelData.group)
                     }
+                  }
+                }
+
+                // An explicit route to the breakdown at the foot of the page.
+                // The counts above are clickable too, but a link is the part
+                // people actually see.
+                Text {
+                  id: packagesLink
+                  visible: !!root.record && packageSection.total > 0
+                  text: "See all " + packageSection.total + " package changes ↓"
+                  color: packagesLinkHover.hovered ? Color.accent : Qt.darker(Color.accent, 1.3)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.underline: packagesLinkHover.hovered
+
+                  HoverHandler {
+                    id: packagesLinkHover
+                    cursorShape: Qt.PointingHandCursor
+                  }
+
+                  TapHandler {
+                    onTapped: root.showPackages(packageSection.group)
                   }
                 }
 
@@ -555,14 +591,6 @@ Item {
                 }
 
                 // -------------------------------------- packages
-                PackageSection {
-                  visible: !!root.record
-                  width: parent.width
-                  record: root.record
-                  foreground: root.foreground
-                  fontFamily: root.fontFamily
-                }
-
                 Section {
                   visible: !!root.record && (root.record.migrations || []).length > 0
                   width: parent.width
@@ -571,6 +599,15 @@ Item {
                   fontFamily: root.fontFamily
                   model: root.record ? (root.record.migrations || []) : []
                   entryColor: root.dim
+                }
+
+                PackageSection {
+                  id: packageSection
+                  visible: !!root.record
+                  width: parent.width
+                  record: root.record
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
                 }
               }
             }

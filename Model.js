@@ -82,9 +82,9 @@ function statLines(record) {
   var c = counts(record)
   var lines = []
   if (c.releases) lines.push({ value: c.releases, label: "Omarchy " + plural(c.releases, "release"), tone: "accent" })
-  if (c.upgraded) lines.push({ value: c.upgraded, label: plural(c.upgraded, "package") + " upgraded", tone: "normal" })
-  if (c.installed) lines.push({ value: c.installed, label: plural(c.installed, "package") + " installed", tone: "normal" })
-  if (c.removed) lines.push({ value: c.removed, label: plural(c.removed, "package") + " removed", tone: "normal" })
+  if (c.upgraded) lines.push({ value: c.upgraded, label: plural(c.upgraded, "package") + " upgraded", tone: "normal", group: "upgraded" })
+  if (c.installed) lines.push({ value: c.installed, label: plural(c.installed, "package") + " installed", tone: "normal", group: "installed" })
+  if (c.removed) lines.push({ value: c.removed, label: plural(c.removed, "package") + " removed", tone: "normal", group: "removed" })
   if (c.migrations) lines.push({ value: c.migrations, label: plural(c.migrations, "migration"), tone: "normal" })
   if (c.warnings) lines.push({ value: c.warnings, label: plural(c.warnings, "warning"), tone: "warn" })
   lines.push({ value: c.errors, label: plural(c.errors, "error"), tone: c.errors ? "urgent" : "muted" })

@@ -25,8 +25,11 @@ wrong — and keeps that history after the update log itself is gone.
 have not read yet. Click it for a card with the version change, what the
 update did, and the headline changes from the releases you crossed.
 
-**A full flight log** with every captured update, the complete release
-notes for each, the package lists, migrations, and warnings. Open it from
+**A full flight log** with every captured update: what it did, the agent
+summary, the full release notes for every release crossed, migrations, and
+a package breakdown at the foot of the page. The counts at the top link
+straight down to it — or press `p`. Pick Upgraded / Installed / Removed,
+and filter by name when an update moved a thousand packages. Open it from
 the card, or bind a key to:
 
 ```bash
@@ -56,6 +59,18 @@ To remove it:
 ```bash
 omarchy plugin remove astronoma.updates
 ```
+
+### Keys
+
+| Key   | Does                                    |
+|-------|-----------------------------------------|
+| `↑ ↓` | move through the update history         |
+| `p`   | jump to the package breakdown           |
+| `r`   | refresh, including Omarchy releases     |
+| `esc` | close                                   |
+
+Summarising has no shortcut on purpose — it costs a real agent run, so the
+button is the only way to start one.
 
 ## Settings
 
