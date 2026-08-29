@@ -58,7 +58,6 @@ def strip_ansi(text: str) -> str:
 class UpdateLog:
     present: bool = False
     migrations: list[str] = field(default_factory=list)
-    sections: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     upgraded: list[str] = field(default_factory=list)
@@ -70,17 +69,6 @@ class UpdateLog:
     # When the transcript was last written — effectively when the update
     # finished. This is what dates a run that carries no timestamps.
     modified: object | None = None
-
-    def as_dict(self) -> dict:
-        return {
-            "present": self.present,
-            "migrations": self.migrations,
-            "sections": self.sections,
-            "errors": self.errors,
-            "warnings": self.warnings,
-            "aurSkipped": self.aur_skipped,
-            "failed": self.failed,
-        }
 
 
 def _classify(line: str) -> str | None:
@@ -111,10 +99,9 @@ def parse(text: str) -> UpdateLog:
                 result.migrations.append(name)
             continue
 
-        section = _SECTION.match(line)
-        if section:
-            if line not in result.sections:
-                result.sections.append(line)
+        # A step heading is structure, not content. Skipped explicitly so it
+        # can never fall through to the error/warning classifier.
+        if _SECTION.match(line):
             continue
 
         for pattern, bucket in (

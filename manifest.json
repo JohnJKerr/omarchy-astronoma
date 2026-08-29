@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "astronoma.updates",
+  "id": "io.github.johnjkerr.astronoma",
   "name": "Astronoma",
   "version": "1.0.0",
   "author": "John Kerr",

@@ -13,7 +13,7 @@ import "Model.js" as Model
 // the flight log's job, which this opens rather than duplicates.
 Panel {
   id: root
-  moduleName: "astronoma.updates"
+  moduleName: "io.github.johnjkerr.astronoma"
   // The base Panel would claim `ipcTarget` for its own handler, which then
   // collides with the richer one registered below. Leaving it empty hands
   // the target to that handler cleanly.
@@ -49,7 +49,7 @@ Panel {
 
   function openFlightlog() {
     root.close()
-    if (bar) bar.run("omarchy-shell shell toggle astronoma.updates '{}'")
+    if (bar) bar.run("omarchy-shell shell toggle io.github.johnjkerr.astronoma '{}'")
   }
 
   function markRead() {

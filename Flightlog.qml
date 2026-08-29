@@ -11,7 +11,7 @@ import "Model.js" as Model
 // full on the right — releases crossed, packages, migrations, warnings,
 // errors, and the agent summary when one has been produced.
 //
-// Summoned with `omarchy-shell shell toggle astronoma.updates '{}'`, or
+// Summoned with `omarchy-shell shell toggle io.github.johnjkerr.astronoma '{}'`, or
 // from the bar widget's card.
 Item {
   id: root
@@ -439,6 +439,19 @@ Item {
                   width: parent.width
                   text: "Reconstructed from package history — the update log for this run was not available, so migrations are inferred and any warnings were not recorded."
                   color: root.faint
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  wrapMode: Text.WordWrap
+                }
+
+                // The update finished, but a whole class of package went
+                // untouched. Worth saying plainly: it is the reason an
+                // expected AUR upgrade is missing from the lists below.
+                Text {
+                  visible: !!root.record && root.record.aurSkipped === true
+                  width: parent.width
+                  text: "The AUR was unavailable during this update, so AUR packages were skipped. Re-run the update to pick them up."
+                  color: Qt.darker(Color.accent, 1.05)
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   wrapMode: Text.WordWrap

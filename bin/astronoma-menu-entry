@@ -24,7 +24,7 @@ ICON = "\uf135"
 ROW = (
     '  "%s": {"icon":"%s","label":"Changelog",'
     '"description":"Astronoma - what the last Omarchy update changed",'
-    '"action":"omarchy-shell shell toggle astronoma.updates \'{}\'"},\n'
+    '"action":"omarchy-shell shell toggle io.github.johnjkerr.astronoma \'{}\'"},\n'
     % (KEY, ICON)
 )
 

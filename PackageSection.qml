@@ -29,6 +29,10 @@ Column {
   readonly property var installed: packages.installed || []
   readonly property var removed: packages.removed || []
   readonly property var upgraded: packages.upgraded || []
+  // Packages a helper built locally. These also appear under upgraded or
+  // installed, so they are a lens over the same update rather than a fourth
+  // group, and deliberately do not count towards the total.
+  readonly property var aur: record && record.aur ? record.aur : []
   readonly property int total: installed.length + removed.length + upgraded.length
   readonly property color dim: Qt.darker(foreground, 1.4)
   readonly property color faint: Qt.darker(foreground, 2.0)
@@ -36,6 +40,7 @@ Column {
   readonly property var activeList: {
     if (group === "installed") return installed
     if (group === "removed") return removed
+    if (group === "aur") return aur
     return upgraded
   }
 
@@ -57,9 +62,12 @@ Column {
     ? visibleList.slice(0, renderCap)
     : visibleList
 
-  readonly property string prefix: {
-    if (group === "installed") return "+ "
-    if (group === "removed") return "− "
+  // The AUR list mixes actions, so its rows are marked from the entry rather
+  // than from the group the way the single-action lists are.
+  function prefixFor(item) {
+    var action = group === "aur" ? String((item && item.action) || "") : group
+    if (action === "installed") return "+ "
+    if (action === "removed") return "− "
     return "↑ "
   }
 
@@ -69,6 +77,7 @@ Column {
     if (which === "upgraded" && upgraded.length === 0) return
     if (which === "installed" && installed.length === 0) return
     if (which === "removed" && removed.length === 0) return
+    if (which === "aur" && aur.length === 0) return
     group = which
     clearFilter()
   }
@@ -106,6 +115,7 @@ Column {
     GroupChip { which: "upgraded"; label: "Upgraded"; count: root.upgraded.length }
     GroupChip { which: "installed"; label: "Installed"; count: root.installed.length }
     GroupChip { which: "removed"; label: "Removed"; count: root.removed.length }
+    GroupChip { which: "aur"; label: "AUR"; count: root.aur.length }
   }
 
   TextField {
@@ -145,7 +155,7 @@ Column {
       Text {
         required property var modelData
         width: rows.width
-        text: root.prefix + Model.packageLabel(modelData)
+        text: root.prefixFor(modelData) + Model.packageLabel(modelData)
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall

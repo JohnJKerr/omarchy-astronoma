@@ -147,7 +147,7 @@ def run_if_changed() -> dict:
         previous = json.loads(stamp.read_text())
     except (OSError, ValueError):
         previous = None
-    if previous == signature and history.latest() is not None:
+    if previous == signature and history.any_records():
         return {"captured": [], "skipped": [], "unchanged": True}
     result = run()
     paths.atomic_json_write(stamp, signature, private=True)

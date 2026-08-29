@@ -46,8 +46,19 @@ Item {
   signal loaded()
   signal summaryFinished(var payload)
 
+  // Set while a refresh is dropped because one was already in flight, so the
+  // request can be honoured on the way out. Opening the panel during the
+  // background timer's tick used to lose exactly the refresh the user asked
+  // for, leaving the network fetch until the next tick.
+  property bool refreshQueued: false
+  property bool queuedWantsReleases: false
+
   function refresh(refreshReleases) {
-    if (reportProcess.running) return
+    if (reportProcess.running) {
+      refreshQueued = true
+      queuedWantsReleases = queuedWantsReleases || refreshReleases === true
+      return
+    }
     lastError = ""
     loading = true
     var argv = [helper, "report"]
@@ -55,6 +66,14 @@ Item {
     if (notesLimit > 0) { argv.push("--notes-limit"); argv.push(String(notesLimit)) }
     reportProcess.command = argv
     reportProcess.running = true
+  }
+
+  function runQueuedRefresh() {
+    if (!refreshQueued) return
+    var wanted = queuedWantsReleases
+    refreshQueued = false
+    queuedWantsReleases = false
+    Qt.callLater(function() { root.refresh(wanted) })
   }
 
   function markSeen(id) {
@@ -107,6 +126,7 @@ Item {
         root.lastError = detail.length ? detail[detail.length - 1].substring(0, 200)
                                        : "astronoma exited with " + exitCode
       }
+      root.runQueuedRefresh()
     }
   }
 
