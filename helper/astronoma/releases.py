@@ -148,9 +148,18 @@ def crossed(releases: list[Release], previous: str | None, current: str) -> list
 
     Exclusive of `previous` and inclusive of `current`: the user already
     had the release they were on, and did land on the one they are now.
+
+    With no `previous` there is no lower bound to work from, and every
+    release up to `current` would qualify — which would claim an update
+    crossed the entire history of Omarchy. A packages-only update hits
+    this on every machine, so the honest answer is the release the machine
+    is on and nothing else: those are the notes we can stand behind.
     """
     if not current:
         return []
+    if previous is None:
+        current_key = versions.release_key(current)
+        return [r for r in releases if versions.release_key(r.version) == current_key]
     selected = [
         release for release in releases
         if versions.is_between(release.version, previous, current)

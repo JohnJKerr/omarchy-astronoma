@@ -338,6 +338,27 @@ class ReleaseTests(TempEnv):
             ["v4.0.1", "v4.0.0"],
         )
 
+    def test_unknown_previous_version_does_not_claim_the_whole_history(self):
+        from astronoma import releases
+        self._seed_cache()
+        items, _ = releases.load()
+        # Without a previous version every release up to 4.0.1 would
+        # otherwise qualify, presenting an update as having delivered
+        # releases the machine already had.
+        self.assertEqual(
+            [r.tag for r in releases.crossed(items, None, "4.0.1")],
+            ["v4.0.1"],
+        )
+
+    def test_packages_only_update_crosses_no_releases(self):
+        from astronoma import releases, report
+        self._seed_cache()
+        items, _ = releases.load()
+        self.assertEqual(
+            report._crossed_for(items, {"from": None, "to": None, "changed": False}),
+            [],
+        )
+
     def test_recent_never_reaches_past_installed(self):
         from astronoma import releases
         self._seed_cache()

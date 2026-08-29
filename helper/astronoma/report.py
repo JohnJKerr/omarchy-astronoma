@@ -14,6 +14,19 @@ def _release_dicts(items) -> list[dict]:
     return [item.as_dict() for item in items]
 
 
+def _crossed_for(catalogue, omarchy: dict):
+    """Releases a captured update crossed, or none when it crossed none.
+
+    An update that moved packages without touching Omarchy has no landing
+    version, and falling back to the installed one would present releases
+    the machine already had as though this update had delivered them.
+    """
+    landed = omarchy.get("to")
+    if not landed:
+        return []
+    return releases_mod.crossed(catalogue, omarchy.get("from"), landed)
+
+
 def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
     """The full view: latest update, history, and the releases behind them.
 
@@ -65,11 +78,7 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
 
     if latest:
         omarchy = latest.get("omarchy") or {}
-        crossed = releases_mod.crossed(
-            catalogue,
-            omarchy.get("from"),
-            omarchy.get("to") or installed or "",
-        )
+        crossed = _crossed_for(catalogue, omarchy)
         payload["latest"] = {
             **latest,
             "crossed": trim(_release_dicts(crossed)),
@@ -86,12 +95,7 @@ def detail(identifier: str, refresh: bool = False) -> dict:
         return {"ok": False, "error": f"No captured update {identifier}"}
 
     catalogue, status = releases_mod.load(refresh=refresh)
-    omarchy = record.get("omarchy") or {}
-    installed_raw = versions.installed()
-    installed = versions.strip_pkgrel(installed_raw) if installed_raw else ""
-    crossed = releases_mod.crossed(
-        catalogue, omarchy.get("from"), omarchy.get("to") or installed
-    )
+    crossed = _crossed_for(catalogue, record.get("omarchy") or {})
     return {
         "ok": True,
         **record,
