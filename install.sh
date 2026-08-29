@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Install Astronoma into the Omarchy shell.
 #
-# Copies this checkout to ~/.config/omarchy/plugins/astronoma.updates and
-# asks the shell to pick it up. Safe to re-run: it replaces the installed
-# copy in place and leaves captured update history alone.
+# Copies this checkout to ~/.config/omarchy/plugins/<plugin id> and asks the
+# shell to pick it up. Safe to re-run: it replaces the installed copy in
+# place and leaves captured update history alone.
 #
 #   ./install.sh              install or update, then enable
 #   ./install.sh --no-enable   install without touching the bar layout
@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-PLUGIN_ID="astronoma.updates"
+PLUGIN_ID="io.github.johnjkerr.astronoma"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
 ENABLE=1

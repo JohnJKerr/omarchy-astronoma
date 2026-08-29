@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-PLUGIN_ID="astronoma.updates"
+PLUGIN_ID="io.github.johnjkerr.astronoma"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
 STATE_DIR="${ASTRONOMA_STATE_DIR:-$HOME/.local/state/omarchy-updates}"

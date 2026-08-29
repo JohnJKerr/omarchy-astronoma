@@ -11,7 +11,7 @@ import "Model.js" as Model
 // full on the right — releases crossed, packages, migrations, warnings,
 // errors, and the agent summary when one has been produced.
 //
-// Summoned with `omarchy-shell shell toggle astronoma.updates '{}'`, or
+// Summoned with `omarchy-shell shell toggle io.github.johnjkerr.astronoma '{}'`, or
 // from the bar widget's card.
 Item {
   id: root

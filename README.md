@@ -57,7 +57,7 @@ network.
 
 ```bash
 omarchy plugin add https://github.com/JohnJKerr/omarchy-astronoma.git
-omarchy plugin enable astronoma.updates
+omarchy plugin enable io.github.johnjkerr.astronoma
 ```
 
 Plugins land disabled so you can read the code before running it — it runs
@@ -70,20 +70,20 @@ Agent summaries remain disabled by default. To pre-accept them during a
 scripted setup, enable consent immediately after installation:
 
 ```bash
-~/.config/omarchy/plugins/astronoma.updates/bin/astronoma agent-summaries enable
+~/.config/omarchy/plugins/io.github.johnjkerr.astronoma/bin/astronoma agent-summaries enable
 ```
 
 Optionally add a permanent row to the Omarchy menu under **Update →
 Changelog**:
 
 ```bash
-~/.config/omarchy/plugins/astronoma.updates/bin/astronoma-menu-entry add
+~/.config/omarchy/plugins/io.github.johnjkerr.astronoma/bin/astronoma-menu-entry add
 ```
 
 Updating is an ordinary plugin command:
 
 ```bash
-omarchy plugin update astronoma.updates
+omarchy plugin update io.github.johnjkerr.astronoma
 ```
 
 To remove it, run `uninstall.sh`. It takes out the optional menu row before
@@ -91,7 +91,7 @@ the plugin directory that row points at, which `omarchy plugin remove` on its
 own cannot do:
 
 ```bash
-~/.config/omarchy/plugins/astronoma.updates/uninstall.sh
+~/.config/omarchy/plugins/io.github.johnjkerr.astronoma/uninstall.sh
 # or, from a checkout:
 ./uninstall.sh --purge    # also delete captured history and the release cache
 ```
@@ -120,10 +120,10 @@ read an update. The flight log is still loaded and reachable:
 - **A keybinding** in `~/.config/hypr/bindings.lua`:
 
   ```lua
-  o.bind("SUPER + SHIFT + U", "Changelog", "omarchy-shell shell toggle astronoma.updates '{}'")
+  o.bind("SUPER + SHIFT + U", "Changelog", "omarchy-shell shell toggle io.github.johnjkerr.astronoma '{}'")
   ```
 
-- **A terminal** — `omarchy-shell shell toggle astronoma.updates '{}'`.
+- **A terminal** — `omarchy-shell shell toggle io.github.johnjkerr.astronoma '{}'`.
 - Or keep the rocket in the bar permanently with `visibility: "always"`.
 
 ## Interactions
@@ -147,7 +147,7 @@ button is the only way to start one.
 ## Settings
 
 Settings live on the widget's entry in `~/.config/omarchy/shell.json` and
-can be set with `omarchy bar set astronoma.updates <key> <value>`:
+can be set with `omarchy bar set io.github.johnjkerr.astronoma <key> <value>`:
 
 | Key | Default | What it does |
 |---|---|---|
@@ -155,8 +155,8 @@ can be set with `omarchy bar set astronoma.updates <key> <value>`:
 | `refreshIntervalSec` | `900` | How often the widget re-reads local update state. The network refresh happens when you open the card, not on this timer |
 
 ```bash
-omarchy bar set astronoma.updates visibility always
-omarchy bar set astronoma.updates refreshIntervalSec 300 --json
+omarchy bar set io.github.johnjkerr.astronoma visibility always
+omarchy bar set io.github.johnjkerr.astronoma refreshIntervalSec 300 --json
 ```
 
 Numbers need `--json`, or they land in `shell.json` as strings.

@@ -660,7 +660,7 @@ class InstallationTests(unittest.TestCase):
             self.assertNotIn("astronoma", menu.read_text())
             self.assertEqual(json.loads(menu.read_text()), {})
             self.assertFalse(
-                (config / "omarchy" / "plugins" / "astronoma.updates").exists()
+                (config / "omarchy" / "plugins" / "io.github.johnjkerr.astronoma").exists()
             )
 
     def test_install_from_another_directory_still_copies_the_qml(self):
@@ -688,7 +688,7 @@ class InstallationTests(unittest.TestCase):
                 cwd=elsewhere, env=env, check=True, capture_output=True, text=True,
             )
             installed = (Path(temporary) / "config" / "omarchy" / "plugins"
-                         / "astronoma.updates")
+                         / "io.github.johnjkerr.astronoma")
             for required in ("manifest.json", "BarWidget.qml", "Flightlog.qml",
                              "Model.js", "Service.qml", "bin/astronoma"):
                 self.assertTrue((installed / required).is_file(), required)
