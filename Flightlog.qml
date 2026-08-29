@@ -485,7 +485,7 @@ Item {
                     visible: !!summaryText
                     readonly property string summaryText:
                       root.record && root.record.summary && root.record.summary.text
-                        ? String(root.record.summary.text) : ""
+                        ? Model.neutraliseCode(String(root.record.summary.text)) : ""
                     width: parent.width
                     text: summaryText
                     color: Qt.darker(root.foreground, 1.15)
