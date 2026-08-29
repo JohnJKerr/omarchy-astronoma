@@ -55,7 +55,7 @@ mkdir -p "$TARGET_DIR"
 for entry in "$SOURCE_DIR"/manifest.json "$SOURCE_DIR"/README.md \
              "$SOURCE_DIR"/LICENSE "$SOURCE_DIR"/Model.js \
              "$SOURCE_DIR"/uninstall.sh \
-             "$SOURCE_DIR"/bin "$SOURCE_DIR"/helper "$SOURCE_DIR"/assets \
+             "$SOURCE_DIR"/bin "$SOURCE_DIR"/helper \
              "$SOURCE_DIR"/*.qml; do
   if [[ -e $entry ]]; then
     cp -r "$entry" "$TARGET_DIR/"
