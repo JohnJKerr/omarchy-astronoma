@@ -50,7 +50,10 @@ Panel {
     ? Model.highlights(latest.crossed || [], 4)
     : Model.highlights(service.recentReleases, 4)
   readonly property string statusNote: Model.statusNote(service.releaseStatus)
+  readonly property string summaryText: latest && latest.summary && latest.summary.text
+    ? Model.neutraliseCode(String(latest.summary.text)) : ""
   property bool confirmingAgentEnable: false
+  property string summaryError: ""
 
   function openFlightlog() {
     root.close()
@@ -285,11 +288,56 @@ Panel {
 
           PanelSeparator { foreground: root.foreground }
 
-          // Present only when an agent is actually installed — the panel
-          // must not advertise something this machine cannot do.
+          // The summary answers the card's own question, so it belongs here
+          // rather than behind a button that only forwards to the flight log.
+          Column {
+            visible: root.summaryText !== ""
+            width: parent.width
+            spacing: Style.space(5)
+
+            PanelSectionHeader {
+              text: "WHAT THIS MEANS FOR YOU"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Text {
+              width: parent.width
+              text: root.summaryText
+              color: Qt.darker(root.foreground, 1.15)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              textFormat: Text.MarkdownText
+              wrapMode: Text.WordWrap
+              // The card is a glance, not the document. Past this the flight
+              // log is the better surface, and it is one button away.
+              maximumLineCount: 14
+              elide: Text.ElideRight
+              onLinkActivated: function(link) {
+                var safe = Model.safeExternalUrl(link)
+                if (safe) Qt.openUrlExternally(safe)
+              }
+            }
+          }
+
+          Text {
+            visible: root.summaryError !== ""
+            width: parent.width
+            text: root.summaryError
+            color: Color.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+
+          // Only shown when pressing it would actually do something: produce a
+          // summary, or take the consent needed to. Once one exists it is
+          // rendered above, and the flight log button below is the only way on
+          // — two buttons that both just opened the flight log read as a
+          // duplicate, because that is what they were.
           Button {
             id: summariseAction
-            visible: service.hasAgent && !!root.latest
+            visible: service.hasAgent && !!root.latest && root.summaryText === ""
             width: parent.width
             bordered: true
             foreground: root.foreground
@@ -298,12 +346,11 @@ Panel {
               ? "Summarising…"
               : (!service.agentSummariesEnabled
                   ? (root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries")
-                : (root.latest && root.latest.summary && root.latest.summary.text
-                  ? "Read the summary"
-                  : "Summarise what changed for me"))
+                  : "Summarise what changed for me")
             enabled: !service.summaryRunning
             function trigger() {
               if (!visible || service.summaryRunning) return
+              root.summaryError = ""
               if (!service.agentSummariesEnabled) {
                 if (!root.confirmingAgentEnable) {
                   root.confirmingAgentEnable = true
@@ -312,8 +359,7 @@ Panel {
                 service.summarise(root.latest ? root.latest.id : "", false, true)
                 return
               }
-              if (root.latest && root.latest.summary && root.latest.summary.text) root.openFlightlog()
-              else service.summarise(root.latest ? root.latest.id : "", false, false)
+              service.summarise(root.latest ? root.latest.id : "", false, false)
             }
             onClicked: trigger()
           }
@@ -343,7 +389,19 @@ Panel {
   Connections {
     target: service
     function onSummaryFinished(payload) {
-      if (payload && payload.ok) root.openFlightlog()
+      if (payload && payload.ok) {
+        // The refresh Service runs on success folds the summary into the
+        // report, so it appears in the card. Jumping to the flight log here
+        // used to be the only way to see the result of a button press on
+        // this surface.
+        root.confirmingAgentEnable = false
+        root.summaryError = ""
+      } else {
+        // Previously silent: a failed summarise closed nothing, showed
+        // nothing, and left the button looking untouched.
+        root.summaryError = payload && payload.error
+          ? payload.error : "The agent did not return a summary"
+      }
     }
   }
 }
