@@ -19,6 +19,7 @@ Item {
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property bool opened: false
   property int selectedIndex: 0
+  property int selectedReleaseIndex: 0
   property string summaryError: ""
   property bool confirmingAgentEnable: false
 
@@ -42,6 +43,10 @@ Item {
   readonly property var releases: record && record.crossed && record.crossed.length
     ? record.crossed
     : (hasRows ? [] : service.recentReleases)
+  // The header is a release navigator, not merely a summary of the selected
+  // update. Keep its catalogue global even when the detail pane shows only
+  // the releases crossed by one historical update.
+  readonly property var solarReleases: navigableReleaseCatalogue()
   readonly property bool showingRecentFallback: !record && service.recentReleases.length > 0
 
   function open(payloadJson) {
@@ -64,9 +69,53 @@ Item {
   function select(index) {
     if (index < 0 || index >= rows.length) return
     selectedIndex = index
+    var landed = rows[index].omarchy && rows[index].omarchy.to
+      ? String(rows[index].omarchy.to) : ""
+    var releaseIndex = releaseIndexForVersion(landed)
+    if (releaseIndex >= 0) selectedReleaseIndex = releaseIndex
     summaryError = ""
     detailService.load(rows[index].id)
     detailFlick.contentY = 0
+  }
+
+  function releaseIndexForVersion(version) {
+    for (var i = 0; i < solarReleases.length; ++i) {
+      if (String(solarReleases[i].version || "") === String(version || "")) return i
+    }
+    return -1
+  }
+
+  function navigableReleaseCatalogue() {
+    var out = []
+    for (var releaseIndex = 0; releaseIndex < service.recentReleases.length; ++releaseIndex) {
+      var release = service.recentReleases[releaseIndex]
+      var version = String(release.version || "")
+      for (var rowIndex = 0; rowIndex < rows.length; ++rowIndex) {
+        var landed = rows[rowIndex].omarchy && rows[rowIndex].omarchy.to
+          ? String(rows[rowIndex].omarchy.to) : ""
+        if (landed === version) {
+          out.push(release)
+          break
+        }
+      }
+    }
+    return out
+  }
+
+  function selectRelease(index) {
+    if (index < 0 || index >= solarReleases.length || index === selectedReleaseIndex) return
+    selectedReleaseIndex = index
+    rocketMark.ignited = true
+    launchTimer.restart()
+    var version = String(solarReleases[index].version || "")
+    for (var i = 0; i < rows.length; ++i) {
+      var landed = rows[i].omarchy && rows[i].omarchy.to
+        ? String(rows[i].omarchy.to) : ""
+      if (landed === version) {
+        select(i)
+        return
+      }
+    }
   }
 
   function moveSelection(delta) {
@@ -118,6 +167,13 @@ Item {
       if (root.opened && service.hasUnread) service.markSeen(service.unreadId)
       if (root.opened && root.hasRows && !detailService.record) root.select(root.selectedIndex)
     }
+  }
+
+  Timer {
+    id: launchTimer
+    interval: 850
+    repeat: false
+    onTriggered: rocketMark.ignited = false
   }
 
   // A second helper instance owns the selected update, so switching rows
@@ -246,7 +302,8 @@ Item {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            implicitHeight: Math.max(rocketMark.implicitHeight, titleColumn.implicitHeight)
+            implicitHeight: Math.max(rocketMark.implicitHeight, titleColumn.implicitHeight,
+                                     releaseSystem.visible ? releaseSystem.implicitHeight : 0)
 
             Rocket {
               id: rocketMark
@@ -263,7 +320,8 @@ Item {
               id: titleColumn
               anchors.left: rocketMark.right
               anchors.leftMargin: Style.space(16)
-              anchors.right: parent.right
+              anchors.right: releaseSystem.visible ? releaseSystem.left : parent.right
+              anchors.rightMargin: releaseSystem.visible ? Style.space(10) : 0
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(2)
 
@@ -284,6 +342,21 @@ Item {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
               }
+            }
+
+            SolarSystem {
+              id: releaseSystem
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              width: Math.min(implicitWidth, parent.width * 0.55)
+              height: implicitHeight
+              releases: root.solarReleases
+              selectedIndex: Math.min(root.selectedReleaseIndex, Math.max(0, root.solarReleases.length - 1))
+              foreground: root.foreground
+              accent: Color.accent
+              fontFamily: root.fontFamily
+              visible: root.solarReleases.length > 0
+              onReleaseActivated: function(index) { root.selectRelease(index) }
             }
           }
 
@@ -619,6 +692,7 @@ Item {
                   }
 
                   Repeater {
+                    id: releaseRepeater
                     model: root.releases
                     Column {
                       required property var modelData

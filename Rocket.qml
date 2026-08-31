@@ -12,8 +12,12 @@ Item {
 
   property color foreground: Color.foreground
   property real cellSize: Style.font.body
+  // The flight log can ignite the exhaust for a launch without having to
+  // synthesize a hover over the rocket.
+  property bool ignited: false
 
   readonly property bool hovered: hover.hovered
+  readonly property bool firing: hovered || ignited
   property int exhaustFrame: 0
 
   readonly property var exhaustFrames: [
@@ -34,7 +38,7 @@ Item {
 
   Timer {
     interval: 110
-    running: root.hovered
+    running: root.firing
     repeat: true
     onTriggered: root.exhaustFrame = (root.exhaustFrame + 1) % root.exhaustFrames.length
     onRunningChanged: {
@@ -69,14 +73,14 @@ Item {
     anchors.horizontalCenter: parent.horizontalCenter
 
     color: root.foreground
-    opacity: root.hovered ? 1 : 0.55
+    opacity: root.firing ? 1 : 0.55
     font.family: Style.font.family
     font.pixelSize: root.cellSize
     lineHeight: 0.95
     lineHeightMode: Text.ProportionalHeight
     textFormat: Text.PlainText
     horizontalAlignment: Text.AlignLeft
-    text: root.hovered
+    text: root.firing
       ? root.exhaustFrames[root.exhaustFrame]
       : "   ..   \n        \n        "
 
