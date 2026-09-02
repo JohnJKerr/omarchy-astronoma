@@ -190,20 +190,17 @@ Item {
       requestedId = String(id)
       if (detailProcess.running) return
       activeId = requestedId
-      detailProcess.command = [detailService.helper, "show", activeId]
-      detailProcess.running = true
+      detailProcess.start([detailService.helper, "show", activeId, "--pretty"])
     }
 
-    Process {
+    BoundedProcess {
       id: detailProcess
-      running: false
-      command: []
-      stdout: StdioCollector { id: detailOut; waitForEnd: true }
-      onExited: function(exitCode) {
-        if (detailService.activeId === detailService.requestedId) {
+      onFinished: function(exitCode, failure) {
+        if (failure) detailService.record = null
+        else if (detailService.activeId === detailService.requestedId) {
           if (exitCode !== 0) detailService.record = null
           else try {
-            var parsed = JSON.parse(String(detailOut.text || ""))
+            var parsed = JSON.parse(detailProcess.stdoutText)
             detailService.record = parsed && parsed.ok ? parsed : null
             if (detailService.record) detailService.loadedId = detailService.activeId
           } catch (error) {
@@ -476,6 +473,7 @@ Item {
                     text: root.record
                       ? Model.versionHeadline(root.record.omarchy, service.installed)
                       : (root.showingRecentFallback ? "Recent Omarchy changes" : "No updates captured yet")
+                    textFormat: Text.PlainText
                     color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.title
@@ -486,6 +484,7 @@ Item {
                   Text {
                     visible: !!root.record
                     text: root.record ? Model.longDate(root.record.startedAt) : ""
+                    textFormat: Text.PlainText
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
@@ -613,24 +612,21 @@ Item {
                     visible: !!summaryText
                     readonly property string summaryText:
                       root.record && root.record.summary && root.record.summary.text
-                        ? Model.neutraliseCode(String(root.record.summary.text)) : ""
+                        ? Model.cleanPlainText(String(root.record.summary.text)) : ""
                     width: parent.width
                     text: summaryText
                     color: Qt.darker(root.foreground, 1.15)
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
-                    textFormat: Text.MarkdownText
+                    textFormat: Text.PlainText
                     wrapMode: Text.WordWrap
-                    onLinkActivated: function(link) {
-                      var safe = Model.safeExternalUrl(link)
-                      if (safe) Qt.openUrlExternally(safe)
-                    }
                   }
 
                   Text {
                     visible: root.summaryError !== ""
                     width: parent.width
                     text: root.summaryError
+                    textFormat: Text.PlainText
                     color: Color.urgent
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -702,6 +698,7 @@ Item {
                       Text {
                         width: parent.width
                         text: Model.releaseHeading(modelData)
+                        textFormat: Text.PlainText
                         color: Color.accent
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.subtitle
@@ -716,12 +713,8 @@ Item {
                         color: Qt.darker(root.foreground, 1.15)
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.bodySmall
-                        textFormat: Text.MarkdownText
+                        textFormat: Text.PlainText
                         wrapMode: Text.WordWrap
-                        onLinkActivated: function(link) {
-                          var safe = Model.safeExternalUrl(link)
-                          if (safe) Qt.openUrlExternally(safe)
-                        }
                       }
                     }
                   }
@@ -731,6 +724,7 @@ Item {
                   visible: Model.statusNote(service.releaseStatus) !== ""
                   width: parent.width
                   text: Model.statusNote(service.releaseStatus)
+                  textFormat: Text.PlainText
                   color: root.faint
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption

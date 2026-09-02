@@ -47,6 +47,7 @@ Row {
     width: Style.space(30)
     horizontalAlignment: Text.AlignRight
     text: String(root.value)
+    textFormat: Text.PlainText
     color: root.highlighted ? Color.accent : root.toneColor
     font.family: root.fontFamily
     font.pixelSize: Style.font.body
@@ -55,6 +56,7 @@ Row {
 
   Text {
     text: root.label
+    textFormat: Text.PlainText
     color: root.highlighted
       ? Color.accent
       : (root.tone === "muted" ? Qt.darker(root.foreground, 1.8)

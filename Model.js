@@ -137,43 +137,29 @@ function isBoilerplate(text) {
   return /^https?:\/\/\S+$/.test(text)
 }
 
-// Qt renders Markdown code spans in a font of its own choosing, ignoring the
-// family set on the Text and coming out visibly larger than everything around
-// it. This whole panel is already monospace, so a code span carries no
-// information the reader can see — only that broken font switch. Strip the
-// markers and keep the text.
-//
-// Fenced blocks lose their fences too, and their newlines become markdown
-// hard breaks so a multi-line command does not collapse into one line.
-function neutraliseCode(text) {
+// Remote release notes and model output are rendered as inert plain text.
+// Preserve their useful structure while removing Markdown control syntax.
+function cleanPlainText(text) {
   var out = String(text || "")
 
   out = out.replace(/```[^\n]*\n([\s\S]*?)```/g, function(match, body) {
-    var lines = String(body).replace(/\n+$/, "").split("\n")
-    for (var i = 0; i < lines.length; i++) lines[i] = lines[i] + "  "
-    return lines.join("\n")
+    return String(body).replace(/\n+$/, "")
   })
-
-  // Inline spans, longest fence first so ``a `b` c`` is handled correctly.
   out = out.replace(/``([^`]+)``/g, "$1")
   out = out.replace(/`([^`\n]+)`/g, "$1")
+  out = out.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+  out = out.replace(/^#{1,6}\s+/gm, "")
+  out = out.replace(/\*\*([^*]+)\*\*/g, "$1")
   return out
 }
 
-// Qt renders Markdown natively, but GitHub release bodies carry noise that
-// reads badly in a narrow panel: the credit suffix on every bullet, and
-// bare issue URLs. Stripping them keeps the notes about the changes.
+// GitHub release bodies carry credit suffixes and changelog links that read
+// badly in a narrow panel. Strip them before the remaining plain-text pass.
 function cleanReleaseBody(body) {
   var text = String(body || "")
   text = text.replace(/\s+by\s+@([\w-]+)\s+in\s+(https:\/\/\S+|#\d+)/g, "")
   text = text.replace(/\*\*Full Changelog\*\*:\s*\S+/g, "")
-  text = neutraliseCode(text)
-  // The release name is already drawn as this section's heading, and an H1
-  // inside a narrow panel dwarfs everything under it. Demote every heading
-  // two levels so the notes keep their structure at a readable size.
-  text = text.replace(/^(#{1,6})\s+/gm, function(match, hashes) {
-    return "#".repeat(Math.min(6, hashes.length + 2)) + " "
-  })
+  text = cleanPlainText(text)
   return text.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "")
 }
 
@@ -191,11 +177,4 @@ function statusNote(status) {
   if (status.error) return status.error
   if (status.stale) return "Showing cached release notes"
   return ""
-}
-
-// Markdown comes from GitHub releases and optional agent output. Never hand
-// local-file or custom application schemes to the desktop URL dispatcher.
-function safeExternalUrl(link) {
-  var value = String(link || "")
-  return /^https:\/\//i.test(value) ? value : ""
 }

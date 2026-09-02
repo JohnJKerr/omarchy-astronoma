@@ -74,7 +74,8 @@ for required in manifest.json BarWidget.qml Flightlog.qml Model.js bin/astronoma
     exit 1
   fi
 done
-chmod +x "$TARGET_DIR/bin/astronoma" "$TARGET_DIR/bin/astronoma-menu-entry"
+chmod +x "$TARGET_DIR/bin/astronoma" "$TARGET_DIR/bin/astronoma-supervisor" \
+         "$TARGET_DIR/bin/astronoma-menu-entry"
 if [[ -f $TARGET_DIR/uninstall.sh ]]; then
   chmod +x "$TARGET_DIR/uninstall.sh"
 fi

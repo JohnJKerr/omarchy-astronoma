@@ -11,9 +11,6 @@ alone, and marked `partial`. That backfill is what lets a machine show a
 useful history the first time Astronoma ever runs.
 """
 
-import fcntl
-import json
-import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
@@ -120,11 +117,8 @@ def _log_matches(session: pacmanlog.Session, log: updatelog.UpdateLog) -> bool:
 
 @contextmanager
 def _capture_lock():
-    directory = paths.state_dir()
-    paths.harden_private_tree(directory)
-    with (directory / ".capture.lock").open("a+") as handle:
-        os.fchmod(handle.fileno(), 0o600)
-        fcntl.flock(handle, fcntl.LOCK_EX)
+    paths.harden_private_tree(paths.state_dir())
+    with paths.private_lock(paths.state_dir() / ".capture.lock"):
         yield
 
 
@@ -144,7 +138,7 @@ def run_if_changed() -> dict:
     stamp = paths.state_dir() / ".capture-sources.json"
     signature = _source_signature()
     try:
-        previous = json.loads(stamp.read_text())
+        previous = paths.read_json(stamp, 4096)
     except (OSError, ValueError):
         previous = None
     if previous == signature and history.any_records():

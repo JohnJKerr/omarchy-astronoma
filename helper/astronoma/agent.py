@@ -10,7 +10,10 @@ keeps every other view.
 """
 
 import json
+import os
 import re
+import selectors
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -20,6 +23,9 @@ from dataclasses import dataclass
 from . import history, paths
 
 TIMEOUT = 180
+MAX_SUMMARY_BYTES = 256 * 1024
+MAX_AGENT_STDOUT = 256 * 1024
+MAX_AGENT_STDERR = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -73,10 +79,11 @@ def _consent_path():
 
 def enabled() -> bool:
     try:
-        payload = json.loads(_consent_path().read_text())
+        payload = paths.read_json(_consent_path(), 1024)
     except (OSError, ValueError):
         return False
-    return isinstance(payload, dict) and payload.get("enabled") is True
+    return (isinstance(payload, dict) and set(payload) == {"enabled"}
+            and isinstance(payload.get("enabled"), bool) and payload["enabled"])
 
 
 def set_enabled(value: bool) -> None:
@@ -252,15 +259,86 @@ def _summary_path(identifier: str):
 
 def cached_summary(identifier: str) -> dict | None:
     try:
-        data = json.loads(_summary_path(identifier).read_text())
+        data = paths.read_json(_summary_path(identifier), MAX_SUMMARY_BYTES)
     except (OSError, ValueError):
         return None
-    return data if isinstance(data, dict) else None
+    valid = (isinstance(data, dict) and data.get("ok") is True
+             and data.get("id") == identifier
+             and isinstance(data.get("agent"), str) and len(data["agent"]) <= 32
+             and isinstance(data.get("agentName"), str) and len(data["agentName"]) <= 80
+             and isinstance(data.get("generatedAt"), int)
+             and isinstance(data.get("text"), str) and len(data["text"]) <= 128 * 1024
+             and set(data) <= {"ok", "id", "agent", "agentName", "generatedAt", "text"})
+    return data if valid else None
 
 
 def save_summary(identifier: str, payload: dict) -> None:
     target = _summary_path(identifier)
     paths.atomic_json_write(target, payload, private=True)
+
+
+def _stop_group(process: subprocess.Popen) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+
+
+def _run_bounded(argv: list[str], workdir: str, timeout: float = TIMEOUT,
+                 stdout_limit: int = MAX_AGENT_STDOUT,
+                 stderr_limit: int = MAX_AGENT_STDERR) -> tuple[int, bytes, bytes]:
+    """Drain bounded output while the producer runs, with a process-group deadline."""
+    process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               cwd=workdir, start_new_session=True)
+    def cancelled(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    previous_handlers = {}
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        previous_handlers[signum] = signal.getsignal(signum)
+        signal.signal(signum, cancelled)
+    selector = selectors.DefaultSelector()
+    buffers = {process.stdout: bytearray(), process.stderr: bytearray()}
+    limits = {process.stdout: stdout_limit, process.stderr: stderr_limit}
+    selector.register(process.stdout, selectors.EVENT_READ)
+    selector.register(process.stderr, selectors.EVENT_READ)
+    deadline = time.monotonic() + timeout
+    try:
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(argv, timeout)
+            for key, _ in selector.select(min(remaining, 0.25)):
+                stream = key.fileobj
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    selector.unregister(stream)
+                    continue
+                buffers[stream].extend(chunk)
+                if len(buffers[stream]) > limits[stream]:
+                    raise ValueError("agent output exceeded the byte limit")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(argv, timeout)
+        return (process.wait(timeout=remaining), bytes(buffers[process.stdout]),
+                bytes(buffers[process.stderr]))
+    except BaseException:
+        _stop_group(process)
+        raise
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+        selector.close()
+        process.stdout.close()
+        process.stderr.close()
 
 
 def summarise(identifier: str, releases: list, key: str | None = None,
@@ -295,18 +373,18 @@ def summarise(identifier: str, releases: list, key: str | None = None,
         # Codex ignores user config and rules and disables its tool features
         # above, with strict validation making unknown controls fail closed.
         with tempfile.TemporaryDirectory(prefix="astronoma-summary-") as workdir:
-            completed = subprocess.run(
-                argv, capture_output=True, text=True, timeout=TIMEOUT, cwd=workdir,
-            )
+            returncode, stdout, stderr = _run_bounded(argv, workdir)
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": f"{chosen.name} timed out after {TIMEOUT}s"}
+    except ValueError:
+        return {"ok": False, "error": f"{chosen.name} returned too much output"}
     except OSError as error:
         return {"ok": False, "error": f"Could not run {chosen.name}: {error}"}
 
-    text = (completed.stdout or "").strip()
-    if completed.returncode != 0 or not text:
-        detail = (completed.stderr or "").strip().splitlines()
-        message = detail[-1] if detail else f"exit {completed.returncode}"
+    text = stdout.decode("utf-8", errors="replace").strip()
+    if returncode != 0 or not text:
+        detail = stderr.decode("utf-8", errors="replace").strip().splitlines()
+        message = detail[-1] if detail else f"exit {returncode}"
         return {"ok": False, "error": f"{chosen.name} failed: {message[:200]}"}
 
     payload = {

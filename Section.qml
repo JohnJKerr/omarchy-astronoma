@@ -27,6 +27,7 @@ Column {
       required property var modelData
       width: root.width
       text: "• " + modelData
+      textFormat: Text.PlainText
       color: root.entryColor
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall

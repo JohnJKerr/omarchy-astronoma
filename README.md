@@ -36,7 +36,7 @@ draws the full view, and both simply render what the helper returns.
   version change, what the update did, and the headline changes from the
   releases you crossed.
 - **A full flight log** — every captured update, the releases crossed with
-  their notes rendered natively, migrations, warnings, errors, and a
+  their notes rendered as safe plain text, migrations, warnings, errors, and a
   package breakdown.
 - **Update history that survives reboots.** The `/tmp` transcript is gone
   after a restart, so parsed records are kept in
@@ -198,6 +198,10 @@ ephemerally with its shell, hooks, plugins, browser, apps, skills, image
 tools, user configuration, and web search disabled; strict configuration
 validation makes unsupported controls fail closed. Both run from an empty
 temporary directory, which keeps project instruction files out of reach.
+Mutable state and cache files are opened below descriptor-verified,
+user-owned directories without following symlinks; reads also enforce byte,
+shape, cardinality, and string limits. Helper output is bounded before it
+reaches the shell, and both helper and agent runs have deadlines.
 
 Astronoma deliberately does not invoke general-purpose agents that cannot
 guarantee a non-tooling run. Gemini CLI is **not** supported for this reason:
@@ -251,7 +255,7 @@ Add `--pretty` to any of them.
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 64 tests, no dependencies
+python3 -m unittest discover -s tests -t .   # 70 tests, no dependencies
 omarchy plugin validate .                    # manifest against the schema
 ./install.sh && omarchy-restart-shell        # install and reload
 ```

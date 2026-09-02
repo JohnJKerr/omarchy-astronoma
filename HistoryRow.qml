@@ -53,6 +53,7 @@ CursorSurface {
 
       Text {
         text: root.dateText
+        textFormat: Text.PlainText
         color: Qt.darker(root.foreground, 1.6)
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -61,6 +62,7 @@ CursorSurface {
       Text {
         width: parent.width - x
         text: root.versionText
+        textFormat: Text.PlainText
         color: root.selected ? Color.accent : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -75,6 +77,7 @@ CursorSurface {
 
       Text {
         text: root.countText
+        textFormat: Text.PlainText
         color: Qt.darker(root.foreground, 1.9)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -85,6 +88,7 @@ CursorSurface {
       Text {
         visible: !!root.row && (root.row.errors || 0) > 0
         text: "· " + (root.row ? root.row.errors : 0) + " "
+        textFormat: Text.PlainText
         color: Color.urgent
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption

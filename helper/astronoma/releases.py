@@ -23,6 +23,9 @@ USER_AGENT = "omarchy-astronoma"
 # Thirty releases of notes is a few hundred KB. Anything past this is not a
 # releases payload, and read() without a bound would take all of it.
 MAX_PAYLOAD_BYTES = 8 * 1024 * 1024
+MAX_CACHE_BYTES = 8 * 1024 * 1024
+MAX_RELEASES = 30
+MAX_RELEASE_STRING = 256 * 1024
 # Opening the panel asks for a refresh every time, and unauthenticated GitHub
 # allows 60 requests an hour. Releases do not land often enough for a second
 # fetch inside this window to return anything new.
@@ -74,10 +77,25 @@ class Release:
 
 def _read_cache() -> dict:
     try:
-        data = json.loads(paths.releases_cache().read_text())
+        data = paths.read_json(paths.releases_cache(), MAX_CACHE_BYTES)
     except (OSError, ValueError):
         return {}
-    return data if isinstance(data, dict) and data.get("schema") == CACHE_SCHEMA else {}
+    if not (isinstance(data, dict) and set(data) == {"schema", "fetchedAt", "releases"}
+            and data.get("schema") == CACHE_SCHEMA and isinstance(data.get("fetchedAt"), int)):
+        return {}
+    items = data.get("releases")
+    required = {"tag", "name", "publishedAt", "body", "url"}
+    allowed = required | {"version"}
+    if not isinstance(items, list) or len(items) > MAX_RELEASES:
+        return {}
+    valid_items = [
+        item for item in items
+        if (isinstance(item, dict) and required <= set(item) <= allowed
+            and all(isinstance(item[key], str) for key in item)
+            and len(item["body"]) <= MAX_RELEASE_STRING
+            and all(len(item[key]) <= 2048 for key in item if key != "body"))
+    ]
+    return {**data, "releases": valid_items}
 
 
 def _write_cache(releases: list[Release]) -> None:

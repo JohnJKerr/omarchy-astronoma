@@ -136,6 +136,7 @@ Column {
     text: root.visibleList.length === 0
       ? "No package matches “" + root.filter + "”"
       : root.visibleList.length + " of " + root.activeList.length + " shown"
+    textFormat: Text.PlainText
     color: root.faint
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
@@ -156,6 +157,7 @@ Column {
         required property var modelData
         width: rows.width
         text: root.prefixFor(modelData) + Model.packageLabel(modelData)
+        textFormat: Text.PlainText
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -169,6 +171,7 @@ Column {
     width: parent.width
     text: "…and " + (root.visibleList.length - root.renderCap)
       + " more. Type in the filter to narrow the list."
+    textFormat: Text.PlainText
     color: root.faint
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption

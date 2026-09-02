@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell.Io
 
 // Runs the `astronoma` helper and holds the result.
 //
@@ -16,7 +15,7 @@ Item {
     var url = String(Qt.resolvedUrl("."))
     return url.replace(/^file:\/\//, "").replace(/\/$/, "")
   }
-  readonly property string helper: pluginDir + "/bin/astronoma"
+  readonly property string helper: pluginDir + "/bin/astronoma-supervisor"
 
   // Release bodies run to tens of thousands of characters. The bar popup
   // shows a few bullets, so it asks for a truncated payload; the flight
@@ -63,8 +62,8 @@ Item {
     var argv = [helper, "report"]
     if (refreshReleases) argv.push("--refresh")
     if (notesLimit > 0) { argv.push("--notes-limit"); argv.push(String(notesLimit)) }
-    reportProcess.command = argv
-    reportProcess.running = true
+    argv.push("--pretty")
+    reportProcess.start(argv)
   }
 
   function runQueuedRefresh() {
@@ -77,8 +76,8 @@ Item {
 
   function markSeen(id) {
     if (seenProcess.running) return
-    seenProcess.command = id ? [helper, "seen", String(id)] : [helper, "seen"]
-    seenProcess.running = true
+    var argv = id ? [helper, "seen", String(id)] : [helper, "seen"]
+    seenProcess.start(argv)
   }
 
   function summarise(id, refresh, enable) {
@@ -88,12 +87,11 @@ Item {
     if (id) argv.push(String(id))
     if (refresh) argv.push("--refresh")
     if (enable) argv.push("--enable")
-    summaryProcess.command = argv
-    summaryProcess.running = true
+    argv.push("--pretty")
+    summaryProcess.start(argv)
   }
 
   property bool summaryRunning: false
-
   function applyReport(raw) {
     var parsed
     try {
@@ -111,17 +109,15 @@ Item {
     root.loaded()
   }
 
-  Process {
+  BoundedProcess {
     id: reportProcess
-    running: false
-    command: []
-    stdout: StdioCollector { id: reportOut; waitForEnd: true }
-    stderr: StdioCollector { id: reportErr; waitForEnd: true }
-    onExited: function(exitCode) {
+    onFinished: function(exitCode, failure) {
       root.loading = false
-      if (exitCode === 0) root.applyReport(String(reportOut.text || ""))
+      if (failure === "timeout") root.lastError = "Astronoma timed out while loading"
+      else if (failure === "output-limit") root.lastError = "Astronoma returned too much data"
+      else if (exitCode === 0) root.applyReport(reportProcess.stdoutText)
       else {
-        var detail = String(reportErr.text || "").split("\n").filter(function(l) { return l !== "" })
+        var detail = reportProcess.stderrText.split("\n").filter(function(l) { return l !== "" })
         root.lastError = detail.length ? detail[detail.length - 1].substring(0, 200)
                                        : "astronoma exited with " + exitCode
       }
@@ -129,30 +125,26 @@ Item {
     }
   }
 
-  Process {
+  BoundedProcess {
     id: seenProcess
-    running: false
-    command: []
+    maxStdoutChars: 4096
+    deadlineMs: 5000
     // Re-read so the bar drops its unread state as soon as it is recorded.
-    onExited: root.refresh(false)
+    onFinished: root.refresh(false)
   }
 
-  Process {
+  BoundedProcess {
     id: summaryProcess
-    running: false
-    command: []
-    stdout: StdioCollector { id: summaryOut; waitForEnd: true }
-    stderr: StdioCollector { id: summaryErr; waitForEnd: true }
-    onExited: function(exitCode) {
+    maxStdoutChars: 512 * 1024
+    deadlineMs: 190000
+    onFinished: function(exitCode, failure) {
       root.summaryRunning = false
       var payload = null
-      try {
-        payload = JSON.parse(String(summaryOut.text || ""))
-      } catch (error) {
-        payload = null
-      }
+      if (failure === "timeout") payload = {ok: false, error: "The agent summary timed out"}
+      else if (failure === "output-limit") payload = {ok: false, error: "The agent returned too much data"}
+      else try { payload = JSON.parse(summaryProcess.stdoutText) } catch (error) { payload = null }
       if (!payload) {
-        var detail = String(summaryErr.text || "").split("\n").filter(function(l) { return l !== "" })
+        var detail = summaryProcess.stderrText.split("\n").filter(function(l) { return l !== "" })
         payload = {
           ok: false,
           error: detail.length ? detail[detail.length - 1].substring(0, 200)

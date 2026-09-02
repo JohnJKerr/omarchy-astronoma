@@ -10,10 +10,16 @@ import sys
 
 from . import __version__, agent, capture, history, releases as releases_mod, report
 
+MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+
 
 def _emit(payload, pretty: bool) -> int:
-    json.dump(payload, sys.stdout, indent=2 if pretty else None)
-    sys.stdout.write("\n")
+    encoded = (json.dumps(payload, indent=2 if pretty else None) + "\n").encode("utf-8")
+    if len(encoded) > MAX_OUTPUT_BYTES:
+        payload = {"ok": False, "error": "Report exceeds the output limit"}
+        encoded = (json.dumps(payload) + "\n").encode("utf-8")
+    stream = getattr(sys.stdout, "buffer", sys.stdout)
+    stream.write(encoded if stream is not sys.stdout else encoded.decode("utf-8"))
     ok = payload.get("ok", True) if isinstance(payload, dict) else True
     return 0 if ok else 1
 

@@ -195,6 +195,7 @@ Panel {
             text: service.everLoaded
               ? "No update has been captured on this machine yet. Here is what changed in Omarchy recently."
               : "Reading update history…"
+            textFormat: Text.PlainText
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -240,6 +241,7 @@ Panel {
                 required property var modelData
                 width: column.width
                 text: "• " + modelData
+                textFormat: Text.PlainText
                 color: Color.urgent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -265,6 +267,7 @@ Panel {
                 required property var modelData
                 width: column.width
                 text: "• " + modelData
+                textFormat: Text.PlainText
                 color: Qt.darker(root.foreground, 1.2)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -279,6 +282,7 @@ Panel {
             visible: root.statusNote !== ""
             width: parent.width
             text: root.statusNote
+            textFormat: Text.PlainText
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -291,6 +295,7 @@ Panel {
             visible: root.summaryError !== ""
             width: parent.width
             text: root.summaryError
+            textFormat: Text.PlainText
             color: Color.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

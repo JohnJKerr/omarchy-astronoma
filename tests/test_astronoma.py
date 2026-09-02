@@ -312,7 +312,10 @@ class ReleaseTests(TempEnv):
         (self.cache / "releases.json").write_text(json.dumps({
             "schema": releases.CACHE_SCHEMA,
             "fetchedAt": 9999999999,
-            "releases": [None, "bad", {"tag": "v4.0.1", "name": "v4.0.1"}],
+            "releases": [None, "bad", {
+                "tag": "v4.0.1", "name": "v4.0.1", "publishedAt": "",
+                "body": "", "url": "",
+            }],
         }))
         items, _ = releases.load()
         self.assertEqual([item.tag for item in items], ["v4.0.1"])
@@ -595,6 +598,69 @@ class ReportTests(TempEnv):
         self.assertFalse(report.detail("2026-01-01-0000")["ok"])
 
 
+class SecurityBoundaryTests(TempEnv):
+    def test_state_root_symlink_is_rejected(self):
+        from astronoma import history
+        target = self.state.parent / "attacker-state"
+        target.mkdir()
+        self.state.symlink_to(target, target_is_directory=True)
+        with self.assertRaises(OSError):
+            history.save({"schema": 1, "id": "2026-08-28-2300"})
+        self.assertEqual(list(target.iterdir()), [])
+
+    def test_history_rejects_symlink_and_oversized_leaves(self):
+        from astronoma import history
+        self.state.mkdir(mode=0o700)
+        outside = self.state.parent / "outside.json"
+        outside.write_text(json.dumps({"schema": 1, "id": "2026-08-28-2300"}))
+        (self.state / "2026-08-28-2300.json").symlink_to(outside)
+        (self.state / "2026-08-17-0900.json").write_bytes(
+            b" " * (history.MAX_RECORD_BYTES + 1)
+        )
+        self.assertEqual(history.all_records(), [])
+        malformed = {"schema": 1, "id": "2026-08-28-2300", "packages": "not-an-object"}
+        self.assertFalse(history._valid_record(malformed, malformed["id"]))
+
+    def test_update_log_rejects_symlinks_and_special_files(self):
+        from astronoma import updatelog
+        real = self.state.parent / "real.log"
+        real.write_text("Finished!")
+        link = self.state.parent / "linked.log"
+        link.symlink_to(real)
+        fifo = self.state.parent / "log.fifo"
+        os.mkfifo(fifo)
+        self.assertFalse(updatelog.load(link).present)
+        self.assertFalse(updatelog.load(fifo).present)
+
+    def test_agent_output_is_stopped_at_the_production_limit(self):
+        from astronoma import agent
+        with tempfile.TemporaryDirectory() as workdir:
+            with self.assertRaises(ValueError):
+                agent._run_bounded(
+                    [sys.executable, "-c", "import sys; sys.stdout.write('x' * 300000)"],
+                    workdir,
+                )
+
+    def test_agent_deadline_survives_closed_output_pipes(self):
+        from astronoma import agent
+        with tempfile.TemporaryDirectory() as workdir:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                agent._run_bounded(
+                    [sys.executable, "-c", "import os,time; os.close(1); os.close(2); time.sleep(5)"],
+                    workdir, timeout=0.1,
+                )
+
+    def test_untrusted_qml_text_is_plain_and_actions_are_pinned(self):
+        root = Path(__file__).parents[1]
+        self.assertNotIn("Text.MarkdownText", (root / "Flightlog.qml").read_text())
+        self.assertIn("textFormat: Text.PlainText", (root / "SolarSystem.qml").read_text())
+        self.assertNotIn("StdioCollector", (root / "Service.qml").read_text())
+        self.assertIn("SplitParser", (root / "BoundedProcess.qml").read_text())
+        workflow = (root / ".github" / "workflows" / "tests.yml").read_text()
+        self.assertNotIn("actions/checkout@v4", workflow)
+        self.assertNotIn("actions/setup-python@v5", workflow)
+
+
 class CliTests(TempEnv):
     def test_agent_summary_consent_can_be_revoked(self):
         code, payload = self._run(["agent-summaries", "enable"])
@@ -765,7 +831,8 @@ class InstallationTests(unittest.TestCase):
             installed = (Path(temporary) / "config" / "omarchy" / "plugins"
                          / "io.github.johnjkerr.astronoma")
             for required in ("manifest.json", "BarWidget.qml", "Flightlog.qml",
-                             "Model.js", "Service.qml", "bin/astronoma"):
+                             "Model.js", "Service.qml", "bin/astronoma",
+                             "bin/astronoma-supervisor"):
                 self.assertTrue((installed / required).is_file(), required)
             self.assertEqual(list(installed.rglob("__pycache__")), [])
 

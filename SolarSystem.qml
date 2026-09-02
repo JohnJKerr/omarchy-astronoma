@@ -84,6 +84,7 @@ Item {
         Text {
           anchors.horizontalCenter: parent.horizontalCenter
           text: String(planet.modelData.version || planet.modelData.tag || "")
+          textFormat: Text.PlainText
           color: planet.selected ? root.accent : root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption

@@ -12,7 +12,9 @@ read too, but only as a fallback for machines whose pacman.log is
 unreadable.
 """
 
+import os
 import re
+import stat
 from dataclasses import dataclass, field
 
 from . import paths
@@ -27,6 +29,7 @@ _SECTION = re.compile(
     r"^(Update system packages|Update AUR packages|Update firmware"
     r"|Update mise|Remove orphan packages|Update keyring)\s*$"
 )
+MAX_LOG_BYTES = 32 * 1024 * 1024
 
 _ERROR_HINTS = (
     "error:", "error!", "failed to", "failure", "cannot ", "unable to",
@@ -142,11 +145,30 @@ def load(path=None) -> UpdateLog:
     from datetime import datetime
 
     log_path = path or paths.update_log()
+    descriptor = -1
     try:
-        raw = log_path.read_bytes()
-        modified = datetime.fromtimestamp(log_path.stat().st_mtime).astimezone()
-    except OSError:
+        descriptor = os.open(log_path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise PermissionError("update log is not a user-owned regular file")
+        if info.st_size > MAX_LOG_BYTES:
+            raise ValueError("update log is too large")
+        chunks, total = [], 0
+        while True:
+            chunk = os.read(descriptor, min(65536, MAX_LOG_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_LOG_BYTES:
+                raise ValueError("update log is too large")
+        raw = b"".join(chunks)
+        modified = datetime.fromtimestamp(info.st_mtime).astimezone()
+    except (OSError, ValueError):
         return UpdateLog(present=False)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     result = parse(raw.decode("utf-8", errors="replace"))
     result.modified = modified
     # Identifies this exact transcript so the same run is never captured
