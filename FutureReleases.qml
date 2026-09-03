@@ -20,6 +20,13 @@ Flickable {
   property color faint: Qt.darker(foreground, 2.1)
   property string fontFamily: Style.font.family
 
+  readonly property bool fullyUpToDate: !earlier
+    && releases.length === 0
+    && !loading
+    && !isDev
+    && !versionUnknown
+    && !(status.error && !status.fetchedAt)
+
   signal back()
 
   contentWidth: width
@@ -86,25 +93,46 @@ Flickable {
       width: parent.width
       spacing: Style.space(5)
 
-      Text {
+      Row {
         width: parent.width
-        text: {
-          if (root.loading) return root.earlier
-            ? "Consulting the astrolabe…" : "Looking through the telescope…"
-          if (root.earlier && !root.boundary) return "No starting version recorded"
-          if (root.earlier && root.status.error && !root.status.fetchedAt) return "Release list unavailable"
-          if (root.earlier) return "No earlier releases found"
-          if (root.isDev) return "You are running a development checkout"
-          if (root.versionUnknown) return "Installed version unavailable"
-          if (root.status.error && !root.status.fetchedAt) return "Release list unavailable"
-          return "You are up to date"
+        spacing: Style.space(10)
+
+        Image {
+          visible: root.fullyUpToDate
+          width: Style.space(48)
+          height: width
+          anchors.verticalCenter: parent.verticalCenter
+          source: "assets/release-planets.png"
+          // The fourth sprite is the fog-of-war world: the next release exists
+          // only as an unknown horizon until Omarchy publishes it.
+          sourceClipRect: Qt.rect(272 * 3, 0, 272, 320)
+          fillMode: Image.PreserveAspectFit
+          // Preserve the dithered detail when the 272x320 sprite is reduced.
+          smooth: true
+          mipmap: true
         }
-        textFormat: Text.PlainText
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.subtitle
-        font.bold: true
-        wrapMode: Text.WordWrap
+
+        Text {
+          width: parent.width - (root.fullyUpToDate ? Style.space(58) : 0)
+          anchors.verticalCenter: parent.verticalCenter
+          text: {
+            if (root.loading) return root.earlier
+              ? "Consulting the astrolabe…" : "Looking through the telescope…"
+            if (root.earlier && !root.boundary) return "No starting version recorded"
+            if (root.earlier && root.status.error && !root.status.fetchedAt) return "Release list unavailable"
+            if (root.earlier) return "No earlier releases found"
+            if (root.isDev) return "You are running a development checkout"
+            if (root.versionUnknown) return "Installed version unavailable"
+            if (root.status.error && !root.status.fetchedAt) return "Release list unavailable"
+            return "You are up to date"
+          }
+          textFormat: Text.PlainText
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.subtitle
+          font.bold: true
+          wrapMode: Text.WordWrap
+        }
       }
 
       Text {
@@ -143,12 +171,13 @@ Flickable {
           spacing: Style.space(10)
 
           ReleasePlanet {
+            id: releasePlanet
             release: releaseCard.modelData
             anchors.verticalCenter: parent.verticalCenter
           }
 
           Text {
-            width: parent.width - Style.space(58)
+            width: parent.width - releasePlanet.width - parent.spacing
             anchors.verticalCenter: parent.verticalCenter
             text: Model.releaseHeading(releaseCard.modelData)
             textFormat: Text.PlainText
