@@ -343,8 +343,70 @@ Item {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
+            clip: true
             implicitHeight: Math.max(rocketMark.implicitHeight, titleColumn.implicitHeight,
                                      releaseSystem.visible ? releaseSystem.implicitHeight : 0)
+
+            // A quiet star field gives the flight-deck header some depth
+            // without competing with the release navigator. Fixed positions
+            // keep the scene stable; varied cycles stop the twinkle from
+            // looking synchronized.
+            Item {
+              id: starField
+              anchors.fill: parent
+              z: -1
+
+              readonly property var stars: [
+                { x: 0.02, y: 0.16, size: 2, low: 0.10, high: 0.48, rise: 920, fall: 1380 },
+                { x: 0.09, y: 0.72, size: 1, low: 0.14, high: 0.56, rise: 1450, fall: 980 },
+                { x: 0.18, y: 0.24, size: 1, low: 0.08, high: 0.42, rise: 1180, fall: 1720 },
+                { x: 0.27, y: 0.82, size: 2, low: 0.10, high: 0.38, rise: 1740, fall: 1120 },
+                { x: 0.34, y: 0.12, size: 1, low: 0.12, high: 0.58, rise: 1040, fall: 1510 },
+                { x: 0.41, y: 0.58, size: 1, low: 0.08, high: 0.44, rise: 1580, fall: 1240 },
+                { x: 0.48, y: 0.30, size: 2, low: 0.10, high: 0.50, rise: 1320, fall: 1860 },
+                { x: 0.55, y: 0.76, size: 1, low: 0.12, high: 0.54, rise: 1880, fall: 1050 },
+                { x: 0.62, y: 0.10, size: 1, low: 0.08, high: 0.40, rise: 1260, fall: 1580 },
+                { x: 0.68, y: 0.48, size: 2, low: 0.10, high: 0.46, rise: 1520, fall: 1180 },
+                { x: 0.74, y: 0.86, size: 1, low: 0.14, high: 0.52, rise: 980, fall: 1690 },
+                { x: 0.80, y: 0.20, size: 1, low: 0.08, high: 0.48, rise: 1640, fall: 1360 },
+                { x: 0.86, y: 0.64, size: 2, low: 0.10, high: 0.42, rise: 1120, fall: 1780 },
+                { x: 0.92, y: 0.08, size: 1, low: 0.12, high: 0.56, rise: 1820, fall: 1080 },
+                { x: 0.97, y: 0.78, size: 1, low: 0.08, high: 0.44, rise: 1380, fall: 1480 }
+              ]
+
+              Repeater {
+                model: starField.stars
+
+                Rectangle {
+                  id: star
+                  required property var modelData
+                  x: Math.round(modelData.x * (starField.width - width))
+                  y: Math.round(modelData.y * (starField.height - height))
+                  width: Style.space(modelData.size)
+                  height: width
+                  radius: width / 2
+                  color: root.foreground
+                  opacity: modelData.low
+
+                  SequentialAnimation on opacity {
+                    running: window.visible
+                    loops: Animation.Infinite
+                    NumberAnimation {
+                      from: star.modelData.low
+                      to: star.modelData.high
+                      duration: star.modelData.rise
+                      easing.type: Easing.InOutSine
+                    }
+                    NumberAnimation {
+                      from: star.modelData.high
+                      to: star.modelData.low
+                      duration: star.modelData.fall
+                      easing.type: Easing.InOutSine
+                    }
+                  }
+                }
+              }
+            }
 
             Rocket {
               id: rocketMark
