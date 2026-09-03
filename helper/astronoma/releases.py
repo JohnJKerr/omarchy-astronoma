@@ -226,3 +226,16 @@ def upcoming(releases: list[Release], current: str | None) -> list[Release]:
         key=lambda release: versions.release_key(release.version),
         reverse=True,
     )
+
+
+def earlier(releases: list[Release], earliest: str | None) -> list[Release]:
+    """Published releases older than the first version in recorded history."""
+    if not earliest:
+        return []
+    earliest_key = versions.release_key(earliest)
+    return sorted(
+        (release for release in releases
+         if versions.release_key(release.version) < earliest_key),
+        key=lambda release: versions.release_key(release.version),
+        reverse=True,
+    )

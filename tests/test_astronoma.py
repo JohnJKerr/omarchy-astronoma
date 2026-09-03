@@ -462,6 +462,21 @@ class ReleaseTests(TempEnv):
         items, _ = releases.load()
         self.assertEqual(releases.upcoming(items, None), [])
 
+    def test_earlier_only_returns_releases_before_recorded_history(self):
+        from astronoma import releases
+        self._seed_cache()
+        items, _ = releases.load()
+        self.assertEqual(
+            [r.tag for r in releases.earlier(items, "4.0.0")],
+            ["v3.8.4"],
+        )
+
+    def test_earlier_is_empty_without_a_recorded_version(self):
+        from astronoma import releases
+        self._seed_cache()
+        items, _ = releases.load()
+        self.assertEqual(releases.earlier(items, None), [])
+
     def test_corrupt_cache_is_ignored(self):
         from astronoma import releases
         self.cache.mkdir(parents=True, exist_ok=True)
@@ -583,6 +598,15 @@ class AgentTests(TempEnv):
 
 
 class ReportTests(TempEnv):
+    def test_earliest_recorded_version_checks_both_sides_of_updates(self):
+        from astronoma import report
+        records = [
+            {"omarchy": {"from": "4.0.0", "to": "4.0.1"}},
+            {"omarchy": {"from": "3.8.4", "to": "4.0.0"}},
+            {"omarchy": {"from": None, "to": None}},
+        ]
+        self.assertEqual(report._earliest_recorded_version(records), "3.8.4")
+
     def test_report_without_history_still_offers_recent_releases(self):
         from astronoma import report, releases
         self.cache.mkdir(parents=True, exist_ok=True)
@@ -619,6 +643,27 @@ class ReportTests(TempEnv):
         self.assertEqual(
             [r["tag"] for r in payload["releases"]["upcoming"]],
             ["v4.0.2"],
+        )
+
+    def test_report_includes_releases_before_recorded_history(self):
+        from astronoma import capture, releases, report
+        self.cache.mkdir(parents=True, exist_ok=True)
+        (self.cache / "releases.json").write_text(json.dumps({
+            "schema": releases.CACHE_SCHEMA,
+            "fetchedAt": 9999999999,
+            "releases": [
+                {"tag": "v3.8.4", "name": "v3.8.4", "publishedAt": "",
+                 "body": "first recorded", "url": ""},
+                {"tag": "v3.8.3", "name": "v3.8.3", "publishedAt": "",
+                 "body": "earlier", "url": ""},
+            ],
+        }))
+        capture.run()
+        payload = report.build()
+        self.assertEqual(payload["releases"]["earliestRecorded"], "3.8.4")
+        self.assertEqual(
+            [r["tag"] for r in payload["releases"]["earlier"]],
+            ["v3.8.3"],
         )
 
     def test_report_is_json_serialisable(self):

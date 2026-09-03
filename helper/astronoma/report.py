@@ -27,6 +27,17 @@ def _crossed_for(catalogue, omarchy: dict):
     return releases_mod.crossed(catalogue, omarchy.get("from"), landed)
 
 
+def _earliest_recorded_version(records: list[dict]) -> str | None:
+    candidates = [
+        str(version)
+        for record in records
+        for version in ((record.get("omarchy") or {}).get("from"),
+                        (record.get("omarchy") or {}).get("to"))
+        if version
+    ]
+    return min(candidates, key=versions.release_key) if candidates else None
+
+
 def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
     """The full view: latest update, history, and the releases behind them.
 
@@ -40,6 +51,7 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
     catalogue, status = releases_mod.load(refresh=refresh)
     records = history.all_records()
     latest = records[0] if records else None
+    earliest = _earliest_recorded_version(records)
 
     def trim(entries: list[dict]) -> list[dict]:
         if notes_limit is None:
@@ -68,11 +80,15 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
         },
         "releases": {
             "status": status,
+            "earliestRecorded": earliest,
             "recent": trim(_release_dicts(
                 releases_mod.recent(catalogue, installed, RECENT_RELEASE_COUNT)
             )),
             "upcoming": trim(_release_dicts(
                 releases_mod.upcoming(catalogue, installed)
+            )),
+            "earlier": trim(_release_dicts(
+                releases_mod.earlier(catalogue, earliest)
             )),
         },
         "history": [history.summary_row(record) for record in records],
