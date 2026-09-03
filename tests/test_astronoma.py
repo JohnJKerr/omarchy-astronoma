@@ -443,6 +443,21 @@ class ReleaseTests(TempEnv):
             ["v4.0.0", "v3.8.4"],
         )
 
+    def test_upcoming_only_returns_releases_newer_than_installed(self):
+        from astronoma import releases
+        self._seed_cache()
+        items, _ = releases.load()
+        self.assertEqual(
+            [r.tag for r in releases.upcoming(items, "4.0.0")],
+            ["v4.0.1"],
+        )
+
+    def test_upcoming_is_empty_when_installed_version_is_unknown(self):
+        from astronoma import releases
+        self._seed_cache()
+        items, _ = releases.load()
+        self.assertEqual(releases.upcoming(items, None), [])
+
     def test_corrupt_cache_is_ignored(self):
         from astronoma import releases
         self.cache.mkdir(parents=True, exist_ok=True)
@@ -577,6 +592,30 @@ class ReportTests(TempEnv):
         self.assertIsNone(payload["latest"])
         self.assertEqual(payload["history"], [])
         self.assertEqual([r["tag"] for r in payload["releases"]["recent"]], ["v4.0.1"])
+
+    def test_report_includes_releases_not_yet_installed(self):
+        from astronoma import releases, report, versions
+        self.cache.mkdir(parents=True, exist_ok=True)
+        (self.cache / "releases.json").write_text(json.dumps({
+            "schema": releases.CACHE_SCHEMA,
+            "fetchedAt": 9999999999,
+            "releases": [
+                {"tag": "v4.0.2", "name": "v4.0.2", "publishedAt": "",
+                 "body": "future", "url": ""},
+                {"tag": "v4.0.1", "name": "v4.0.1", "publishedAt": "",
+                 "body": "current", "url": ""},
+            ],
+        }))
+        original = versions.installed
+        versions.installed = lambda: "4.0.1-1"
+        try:
+            payload = report.build()
+        finally:
+            versions.installed = original
+        self.assertEqual(
+            [r["tag"] for r in payload["releases"]["upcoming"]],
+            ["v4.0.2"],
+        )
 
     def test_report_is_json_serialisable(self):
         from astronoma import capture, releases, report

@@ -71,6 +71,9 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
             "recent": trim(_release_dicts(
                 releases_mod.recent(catalogue, installed, RECENT_RELEASE_COUNT)
             )),
+            "upcoming": trim(_release_dicts(
+                releases_mod.upcoming(catalogue, installed)
+            )),
         },
         "history": [history.summary_row(record) for record in records],
         # Drives whether the bar asks for attention at all.

@@ -213,3 +213,16 @@ def recent(releases: list[Release], current: str | None, limit: int = 5) -> list
         pool = [r for r in releases if versions.release_key(r.version) <= current_key]
     ordered = sorted(pool, key=lambda r: versions.release_key(r.version), reverse=True)
     return ordered[: max(0, int(limit))]
+
+
+def upcoming(releases: list[Release], current: str | None) -> list[Release]:
+    """Published releases newer than the version installed on this machine."""
+    if not current:
+        return []
+    current_key = versions.release_key(current)
+    return sorted(
+        (release for release in releases
+         if versions.release_key(release.version) > current_key),
+        key=lambda release: versions.release_key(release.version),
+        reverse=True,
+    )
