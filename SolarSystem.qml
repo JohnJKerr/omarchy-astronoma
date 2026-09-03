@@ -23,17 +23,6 @@ Item {
 
   readonly property real orbitSpacing: Math.min(Style.space(165), width * 0.31)
 
-  function planetKind(release) {
-    var weight = String((release && release.body) || "").length
-    if (weight > 12000) return 2
-    if (weight > 4000) return 1
-    return 0
-  }
-
-  function planetSize(release) {
-    return [Style.space(58), Style.space(78), Style.space(98)][planetKind(release)]
-  }
-
   Repeater {
     model: root.releases
 
@@ -64,21 +53,15 @@ Item {
           height: Style.space(102)
           anchors.horizontalCenter: parent.horizontalCenter
 
-          Image {
-            readonly property int kind: root.planetKind(planet.modelData)
+          ReleasePlanet {
             anchors.centerIn: parent
-            width: root.planetSize(planet.modelData)
-            height: width
-            source: "assets/release-planets.png"
-            // The generated sheet is four equal-width cells. Cropping in the
-            // scene graph keeps this to one small installed asset.
-            sourceClipRect: Qt.rect(kind * 272, 0, 272, 320)
-            fillMode: Image.PreserveAspectFit
-            smooth: false
-            mipmap: false
-            opacity: planet.selected ? 1 : 0.72
+            release: planet.modelData
+            patchSize: Style.space(58)
+            minorSize: Style.space(78)
+            majorSize: Style.space(98)
+            artOpacity: planet.selected ? 1 : 0.72
 
-            Behavior on opacity { NumberAnimation { duration: 180 } }
+            Behavior on artOpacity { NumberAnimation { duration: 180 } }
           }
         }
 

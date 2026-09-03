@@ -125,15 +125,26 @@ Flickable {
 
         PanelSeparator { foreground: root.foreground }
 
-        Text {
+        Row {
           width: parent.width
-          text: Model.releaseHeading(releaseCard.modelData)
-          textFormat: Text.PlainText
-          color: Color.accent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.subtitle
-          font.bold: true
-          wrapMode: Text.WordWrap
+          spacing: Style.space(10)
+
+          ReleasePlanet {
+            release: releaseCard.modelData
+            anchors.verticalCenter: parent.verticalCenter
+          }
+
+          Text {
+            width: parent.width - Style.space(58)
+            anchors.verticalCenter: parent.verticalCenter
+            text: Model.releaseHeading(releaseCard.modelData)
+            textFormat: Text.PlainText
+            color: Color.accent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.subtitle
+            font.bold: true
+            wrapMode: Text.WordWrap
+          }
         }
 
         Text {

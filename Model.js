@@ -50,6 +50,17 @@ function plural(count, singular, pluralForm) {
   return count === 1 ? singular : (pluralForm || singular + "s")
 }
 
+// The release's semantic shape chooses both the planet artwork and scale:
+// x.0.0 is major, x.y.0 is minor, and x.y.z is patch.
+function planetKind(release) {
+  var version = String((release && (release.version || release.tag)) || "")
+  var match = version.match(/v?(\d+)\.(\d+)\.(\d+)/i)
+  if (!match) return 0
+  if (Number(match[3]) !== 0) return 0
+  if (Number(match[2]) !== 0) return 1
+  return 2
+}
+
 // "Omarchy 4.0.0 → 4.0.1", or an honest alternative when a version is
 // unknown or the update never touched Omarchy itself.
 function versionHeadline(omarchy, installed) {
