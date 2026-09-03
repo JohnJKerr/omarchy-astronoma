@@ -38,6 +38,9 @@ draws the full view, and both simply render what the helper returns.
 - **A full flight log** — every captured update, the releases crossed with
   their notes rendered as safe plain text, migrations, warnings, errors, and a
   package breakdown.
+- **A look ahead** — the telescope beyond the current release opens the
+  published releases from `omacom/omarchy` that are newer than the version on
+  this machine, with a clear up-to-date state when there are none.
 - **Update history that survives reboots.** The `/tmp` transcript is gone
   after a restart, so parsed records are kept in
   `~/.local/state/omarchy-updates/`.
