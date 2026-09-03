@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from . import paths, versions
 
-REPO = "basecamp/omarchy"
+REPO = "omacom/omarchy"
 API = f"https://api.github.com/repos/{REPO}/releases"
 CACHE_SCHEMA = 1
 DEFAULT_TTL = 6 * 60 * 60  # Releases land a few times a week at most.

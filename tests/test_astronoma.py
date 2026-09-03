@@ -306,6 +306,10 @@ class HistoryTests(TempEnv):
 
 
 class ReleaseTests(TempEnv):
+    def test_fetch_uses_the_canonical_omacom_release_feed(self):
+        from astronoma import releases
+        self.assertEqual(releases.REPO, "omacom/omarchy")
+
     def test_malformed_cache_entries_are_ignored(self):
         from astronoma import releases
         self.cache.mkdir(parents=True, exist_ok=True)
