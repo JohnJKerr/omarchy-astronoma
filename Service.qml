@@ -30,6 +30,7 @@ Item {
   readonly property var latest: report && report.latest ? report.latest : null
   readonly property var historyRows: report && report.history ? report.history : []
   readonly property var recentReleases: report && report.releases ? (report.releases.recent || []) : []
+  readonly property var upcomingReleases: report && report.releases ? (report.releases.upcoming || []) : []
   readonly property var releaseStatus: report && report.releases ? (report.releases.status || ({})) : ({})
   readonly property var agents: report && report.agents ? report.agents : []
   readonly property bool hasAgent: agents.length > 0

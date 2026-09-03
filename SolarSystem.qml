@@ -16,6 +16,7 @@ Item {
   property string fontFamily: Style.font.family
 
   signal releaseActivated(int index)
+  signal futureActivated()
 
   implicitWidth: Style.space(510)
   implicitHeight: Style.space(132)
@@ -108,10 +109,12 @@ Item {
   // The fog occupies the missing chronological neighbour, so the map never
   // misleadingly suggests that the known release list continues forever.
   component UnchartedPlanet: Item {
+    id: uncharted
     // A fog world lives one index beyond an end of the real catalogue. That
     // makes it travel through the same orbit coordinates as every release
     // instead of popping into an already-settled side slot.
     property int virtualIndex: 0
+    property bool telescope: false
     readonly property int distance: Math.abs(virtualIndex - root.selectedIndex)
     width: Style.space(130)
     height: root.height
@@ -127,11 +130,21 @@ Item {
       anchors.centerIn: parent
       width: Style.space(84)
       height: width
-      source: "assets/release-planets.png"
-      sourceClipRect: Qt.rect(3 * 272, 0, 272, 320)
+      source: uncharted.telescope ? "assets/release-telescope.png" : "assets/release-planets.png"
+      sourceClipRect: uncharted.telescope ? Qt.rect(0, 0, 272, 320) : Qt.rect(3 * 272, 0, 272, 320)
       fillMode: Image.PreserveAspectFit
       smooth: false
       mipmap: false
+    }
+
+    HoverHandler {
+      enabled: uncharted.telescope
+      cursorShape: Qt.PointingHandCursor
+    }
+
+    TapHandler {
+      enabled: uncharted.telescope
+      onTapped: root.futureActivated()
     }
   }
 
@@ -143,5 +156,6 @@ Item {
   UnchartedPlanet {
     // The newer unknown lies immediately before index zero.
     virtualIndex: -1
+    telescope: true
   }
 }

@@ -22,6 +22,7 @@ Item {
   property int selectedReleaseIndex: 0
   property string summaryError: ""
   property bool confirmingAgentEnable: false
+  property bool showingUpcoming: false
 
   // Shares the [menu] surface tokens, so a theme that styles the Omarchy
   // menu styles the flight log to match.
@@ -51,6 +52,7 @@ Item {
 
   function open(payloadJson) {
     root.opened = true
+    root.showingUpcoming = false
     root.summaryError = ""
     service.refresh(true)
     if (!root.hasRows) root.selectedIndex = 0
@@ -124,17 +126,18 @@ Item {
   }
 
   function scrollDetail(pages) {
-    if (!detailFlick) return
-    var maximum = Math.max(0, detailFlick.contentHeight - detailFlick.height)
-    var step = Math.max(Style.space(120), detailFlick.height * 0.85)
-    detailFlick.contentY = Math.max(0, Math.min(maximum,
-      detailFlick.contentY + pages * step))
+    var view = root.showingUpcoming ? futurePage : detailFlick
+    if (!view) return
+    var maximum = Math.max(0, view.contentHeight - view.height)
+    var step = Math.max(Style.space(120), view.height * 0.85)
+    view.contentY = Math.max(0, Math.min(maximum, view.contentY + pages * step))
   }
 
   function scrollDetailToEnd(end) {
-    if (!detailFlick) return
-    detailFlick.contentY = end
-      ? Math.max(0, detailFlick.contentHeight - detailFlick.height)
+    var view = root.showingUpcoming ? futurePage : detailFlick
+    if (!view) return
+    view.contentY = end
+      ? Math.max(0, view.contentHeight - view.height)
       : 0
   }
 
@@ -275,9 +278,13 @@ Item {
         focus: true
 
         Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) { root.close(); event.accepted = true }
-          else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) { root.moveSelection(1); event.accepted = true }
-          else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) { root.moveSelection(-1); event.accepted = true }
+          if (event.key === Qt.Key_Escape) {
+            if (root.showingUpcoming) root.showingUpcoming = false
+            else root.close()
+            event.accepted = true
+          }
+          else if (!root.showingUpcoming && (event.key === Qt.Key_Down || event.key === Qt.Key_J)) { root.moveSelection(1); event.accepted = true }
+          else if (!root.showingUpcoming && (event.key === Qt.Key_Up || event.key === Qt.Key_K)) { root.moveSelection(-1); event.accepted = true }
           else if (event.key === Qt.Key_PageDown) { root.scrollDetail(1); event.accepted = true }
           else if (event.key === Qt.Key_PageUp) { root.scrollDetail(-1); event.accepted = true }
           else if (event.key === Qt.Key_Space) {
@@ -287,7 +294,7 @@ Item {
           else if (event.key === Qt.Key_Home) { root.scrollDetailToEnd(false); event.accepted = true }
           else if (event.key === Qt.Key_End) { root.scrollDetailToEnd(true); event.accepted = true }
           else if (event.key === Qt.Key_R) { service.refresh(true); event.accepted = true }
-          else if (event.key === Qt.Key_P) { root.showPackages(packageSection.group); event.accepted = true }
+          else if (!root.showingUpcoming && event.key === Qt.Key_P) { root.showPackages(packageSection.group); event.accepted = true }
           // Summarising deliberately has no single-key shortcut. This surface
           // takes exclusive keyboard focus, so one stray key would otherwise
           // spend an agent run the user never asked for.
@@ -354,6 +361,10 @@ Item {
               fontFamily: root.fontFamily
               visible: root.solarReleases.length > 0
               onReleaseActivated: function(index) { root.selectRelease(index) }
+              onFutureActivated: {
+                root.showingUpcoming = true
+                futurePage.contentY = 0
+              }
             }
           }
 
@@ -372,7 +383,9 @@ Item {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            text: "↑↓ select · pgup/pgdn or space scroll · home/end jump · p packages · r refresh · esc close"
+            text: root.showingUpcoming
+              ? "pgup/pgdn or space scroll · home/end jump · r refresh · esc flight log"
+              : "↑↓ select · pgup/pgdn or space scroll · home/end jump · p packages · r refresh · esc close"
             color: root.faint
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -393,7 +406,7 @@ Item {
               id: listPane
               width: Math.round(parent.width * 0.32)
               height: parent.height
-              visible: root.hasRows
+              visible: root.hasRows && !root.showingUpcoming
 
               Column {
                 anchors.fill: parent
@@ -438,7 +451,7 @@ Item {
             }
 
             PanelSeparator {
-              visible: root.hasRows
+              visible: root.hasRows && !root.showingUpcoming
               x: listPane.width + Style.space(14)
               width: 1
               height: parent.height
@@ -448,6 +461,7 @@ Item {
             // ------------------------------------------------ detail
             Flickable {
               id: detailFlick
+              visible: !root.showingUpcoming
               x: root.hasRows ? listPane.width + Style.space(30) : 0
               width: parent.width - x
               height: parent.height
@@ -751,6 +765,25 @@ Item {
                   fontFamily: root.fontFamily
                 }
               }
+            }
+
+            FutureReleases {
+              id: futurePage
+              visible: root.showingUpcoming
+              anchors.fill: parent
+              releases: service.upcomingReleases
+              installed: service.installed
+              versionUnknown: service.report && service.report.omarchy
+                ? service.report.omarchy.versionUnknown === true : false
+              isDev: service.report && service.report.omarchy
+                ? service.report.omarchy.isDev === true : false
+              loading: service.loading && !service.everLoaded
+              status: service.releaseStatus
+              foreground: root.foreground
+              dim: root.dim
+              faint: root.faint
+              fontFamily: root.fontFamily
+              onBack: root.showingUpcoming = false
             }
           }
 
