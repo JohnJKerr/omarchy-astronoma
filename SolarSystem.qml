@@ -16,6 +16,8 @@ Item {
   property color foreground: Color.foreground
   property color accent: Color.accent
   property string fontFamily: Style.font.family
+  property string hoveredTarget: ""
+  readonly property bool actionableHovered: hoveredTarget !== ""
 
   signal releaseActivated(int index)
   signal futureActivated()
@@ -84,6 +86,11 @@ Item {
         id: planetHover
         enabled: !planet.selected
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onHoveredChanged: {
+          var target = "release:" + planet.index
+          if (hovered) root.hoveredTarget = target
+          else if (root.hoveredTarget === target) root.hoveredTarget = ""
+        }
       }
 
       TapHandler {
@@ -129,8 +136,14 @@ Item {
     }
 
     HoverHandler {
+      id: unchartedHover
       enabled: uncharted.instrument !== ""
       cursorShape: Qt.PointingHandCursor
+      onHoveredChanged: {
+        var target = "instrument:" + uncharted.instrument
+        if (hovered) root.hoveredTarget = target
+        else if (root.hoveredTarget === target) root.hoveredTarget = ""
+      }
     }
 
     TapHandler {

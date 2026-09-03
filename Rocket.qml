@@ -15,16 +15,30 @@ Item {
   // The flight log can ignite the exhaust for a launch without having to
   // synthesize a hover over the rocket.
   property bool ignited: false
+  // Nearby navigation targets can spin the engine up before their click
+  // triggers the full launch effect.
+  property bool engineWarm: false
 
   readonly property bool hovered: hover.hovered
-  readonly property bool firing: hovered || ignited
+  readonly property bool warming: (hovered || engineWarm) && !ignited
+  readonly property bool firing: ignited
   property int exhaustFrame: 0
+
+  onWarmingChanged: {
+    if (warming) exhaustFrame = 0
+  }
+  onFiringChanged: exhaustFrame = 0
 
   readonly property var exhaustFrames: [
     "   \\/   \n  .**.  \n .    . ",
     "   **   \n  \\||/  \n    .   ",
     "  .\\/   \n   **.  \n .   .  ",
     "   ||   \n  .\\/   \n    . . "
+  ]
+  readonly property var warmupFrames: [
+    "   ..   \n        \n        ",
+    "   ::   \n    .   \n        ",
+    "   ..   \n   . .  \n        "
   ]
 
   implicitWidth: Math.max(hull.implicitWidth, exhaust.implicitWidth)
@@ -37,10 +51,13 @@ Item {
   }
 
   Timer {
-    interval: 110
-    running: root.firing
+    interval: root.firing ? 110 : 180
+    running: root.firing || root.warming
     repeat: true
-    onTriggered: root.exhaustFrame = (root.exhaustFrame + 1) % root.exhaustFrames.length
+    onTriggered: {
+      var frames = root.firing ? root.exhaustFrames : root.warmupFrames
+      root.exhaustFrame = (root.exhaustFrame + 1) % frames.length
+    }
     onRunningChanged: {
       if (!running) root.exhaustFrame = 0
     }
@@ -73,7 +90,7 @@ Item {
     anchors.horizontalCenter: parent.horizontalCenter
 
     color: root.foreground
-    opacity: root.firing ? 1 : 0.55
+    opacity: root.firing ? 1 : (root.warming ? 0.78 : 0.55)
     font.family: Style.font.family
     font.pixelSize: root.cellSize
     lineHeight: 0.95
@@ -82,7 +99,9 @@ Item {
     horizontalAlignment: Text.AlignLeft
     text: root.firing
       ? root.exhaustFrames[root.exhaustFrame]
-      : "   ..   \n        \n        "
+      : (root.warming
+          ? root.warmupFrames[root.exhaustFrame]
+          : "   ..   \n        \n        ")
 
     Behavior on opacity {
       NumberAnimation { duration: 90 }

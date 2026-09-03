@@ -24,6 +24,7 @@ Item {
   property bool confirmingAgentEnable: false
   property bool showingUpcoming: false
   property bool showingEarlier: false
+  property int hoveredHistoryIndex: -1
   readonly property bool showingReleaseCatalogue: showingUpcoming || showingEarlier
 
   // Shares the [menu] surface tokens, so a theme that styles the Omarchy
@@ -116,8 +117,7 @@ Item {
     showingEarlier = false
     if (index === selectedReleaseIndex) return
     selectedReleaseIndex = index
-    rocketMark.ignited = true
-    launchTimer.restart()
+    igniteRocket()
     var version = String(solarReleases[index].version || "")
     for (var i = 0; i < rows.length; ++i) {
       var landed = rows[i].omarchy && rows[i].omarchy.to
@@ -127,6 +127,17 @@ Item {
         return
       }
     }
+  }
+
+  function igniteRocket() {
+    rocketMark.ignited = true
+    launchTimer.restart()
+  }
+
+  function launchToHistory(index) {
+    if (index < 0 || index >= rows.length) return
+    igniteRocket()
+    select(index)
   }
 
   function moveSelection(delta) {
@@ -344,6 +355,8 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               foreground: Color.accent
               cellSize: Style.font.bodySmall
+              engineWarm: root.hoveredHistoryIndex >= 0
+                || releaseSystem.actionableHovered
             }
 
             Column {
@@ -390,11 +403,13 @@ Item {
               visible: root.solarReleases.length > 0
               onReleaseActivated: function(index) { root.selectRelease(index) }
               onFutureActivated: {
+                root.igniteRocket()
                 root.showingEarlier = false
                 root.showingUpcoming = true
                 futurePage.contentY = 0
               }
               onEarlierActivated: {
+                root.igniteRocket()
                 root.showingUpcoming = false
                 root.showingEarlier = true
                 earlierPage.contentY = 0
@@ -475,6 +490,16 @@ Item {
                         width: listColumn.width
                         spacing: Style.space(8)
 
+                        HoverHandler {
+                          cursorShape: Qt.PointingHandCursor
+                          onHoveredChanged: {
+                            if (hovered) root.hoveredHistoryIndex = historyEntry.index
+                            else if (root.hoveredHistoryIndex === historyEntry.index) {
+                              root.hoveredHistoryIndex = -1
+                            }
+                          }
+                        }
+
                         HistoryRow {
                           width: parent.width - historyPlanetSlot.width - parent.spacing
                           anchors.verticalCenter: parent.verticalCenter
@@ -482,7 +507,7 @@ Item {
                           selected: historyEntry.index === root.selectedIndex
                           foreground: root.foreground
                           fontFamily: root.fontFamily
-                          onActivated: root.select(historyEntry.index)
+                          onActivated: root.launchToHistory(historyEntry.index)
                         }
 
                         Item {
@@ -506,7 +531,7 @@ Item {
                             enabled: historyPlanetSlot.hasRelease
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.select(historyEntry.index)
+                            onClicked: root.launchToHistory(historyEntry.index)
                           }
                         }
                       }

@@ -773,7 +773,19 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("ReleasePlanet {", flightlog)
         self.assertIn("String(historyEntry.modelData.omarchy.to)", flightlog)
         self.assertIn("enabled: historyPlanetSlot.hasRelease", flightlog)
-        self.assertIn("onClicked: root.select(historyEntry.index)", flightlog)
+        self.assertIn("onClicked: root.launchToHistory(historyEntry.index)", flightlog)
+
+    def test_release_hover_warms_rocket_before_pointer_launch(self):
+        root = Path(__file__).resolve().parents[1]
+        rocket = (root / "Rocket.qml").read_text()
+        solar_system = (root / "SolarSystem.qml").read_text()
+        flightlog = (root / "Flightlog.qml").read_text()
+
+        self.assertIn("property bool engineWarm: false", rocket)
+        self.assertIn("readonly property bool warming:", rocket)
+        self.assertIn("readonly property bool actionableHovered:", solar_system)
+        self.assertIn("engineWarm: root.hoveredHistoryIndex >= 0", flightlog)
+        self.assertIn("root.launchToHistory(historyEntry.index)", flightlog)
 
 
 class CliTests(TempEnv):
