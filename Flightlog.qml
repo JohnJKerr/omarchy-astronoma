@@ -487,17 +487,26 @@ Item {
 
                         Item {
                           id: historyPlanetSlot
+                          readonly property bool hasRelease: !!historyEntry.modelData.omarchy
+                            && !!historyEntry.modelData.omarchy.to
                           width: Style.space(64)
                           height: Style.space(64)
 
                           ReleasePlanet {
                             anchors.centerIn: parent
-                            visible: !!historyEntry.modelData.omarchy
-                              && !!historyEntry.modelData.omarchy.to
+                            visible: historyPlanetSlot.hasRelease
                             release: ({
                               version: visible
                                 ? String(historyEntry.modelData.omarchy.to) : ""
                             })
+                          }
+
+                          MouseArea {
+                            anchors.fill: parent
+                            enabled: historyPlanetSlot.hasRelease
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.select(historyEntry.index)
                           }
                         }
                       }

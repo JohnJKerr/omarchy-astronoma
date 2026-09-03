@@ -772,6 +772,8 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("width: Style.space(64)", flightlog)
         self.assertIn("ReleasePlanet {", flightlog)
         self.assertIn("String(historyEntry.modelData.omarchy.to)", flightlog)
+        self.assertIn("enabled: historyPlanetSlot.hasRelease", flightlog)
+        self.assertIn("onClicked: root.select(historyEntry.index)", flightlog)
 
 
 class CliTests(TempEnv):
