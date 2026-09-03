@@ -17,6 +17,7 @@ Item {
 
   signal releaseActivated(int index)
   signal futureActivated()
+  signal earlierActivated()
 
   implicitWidth: Style.space(510)
   implicitHeight: Style.space(132)
@@ -89,15 +90,15 @@ Item {
     }
   }
 
-  // The fog occupies the missing chronological neighbour, so the map never
-  // misleadingly suggests that the known release list continues forever.
+  // Instruments occupy the missing chronological neighbours: an astrolabe
+  // looks into history and a telescope looks beyond the installed release.
   component UnchartedPlanet: Item {
     id: uncharted
     // A fog world lives one index beyond an end of the real catalogue. That
     // makes it travel through the same orbit coordinates as every release
     // instead of popping into an already-settled side slot.
     property int virtualIndex: 0
-    property bool telescope: false
+    property string instrument: ""
     readonly property int distance: Math.abs(virtualIndex - root.selectedIndex)
     width: Style.space(130)
     height: root.height
@@ -113,32 +114,37 @@ Item {
       anchors.centerIn: parent
       width: Style.space(84)
       height: width
-      source: uncharted.telescope ? "assets/release-telescope.png" : "assets/release-planets.png"
-      sourceClipRect: uncharted.telescope ? Qt.rect(0, 0, 272, 320) : Qt.rect(3 * 272, 0, 272, 320)
+      source: uncharted.instrument === "telescope"
+        ? "assets/release-telescope.png" : "assets/release-astrolabe.png"
+      sourceClipRect: Qt.rect(0, 0, 272, 320)
       fillMode: Image.PreserveAspectFit
       smooth: false
       mipmap: false
     }
 
     HoverHandler {
-      enabled: uncharted.telescope
+      enabled: uncharted.instrument !== ""
       cursorShape: Qt.PointingHandCursor
     }
 
     TapHandler {
-      enabled: uncharted.telescope
-      onTapped: root.futureActivated()
+      enabled: uncharted.instrument !== ""
+      onTapped: {
+        if (uncharted.instrument === "telescope") root.futureActivated()
+        else root.earlierActivated()
+      }
     }
   }
 
   UnchartedPlanet {
     // Releases are newest-first; the older unknown lies after the last one.
     virtualIndex: root.releases.length
+    instrument: "astrolabe"
   }
 
   UnchartedPlanet {
     // The newer unknown lies immediately before index zero.
     virtualIndex: -1
-    telescope: true
+    instrument: "telescope"
   }
 }

@@ -31,6 +31,9 @@ Item {
   readonly property var historyRows: report && report.history ? report.history : []
   readonly property var recentReleases: report && report.releases ? (report.releases.recent || []) : []
   readonly property var upcomingReleases: report && report.releases ? (report.releases.upcoming || []) : []
+  readonly property var earlierReleases: report && report.releases ? (report.releases.earlier || []) : []
+  readonly property string earliestRecorded: report && report.releases
+    ? String(report.releases.earliestRecorded || "") : ""
   readonly property var releaseStatus: report && report.releases ? (report.releases.status || ({})) : ({})
   readonly property var agents: report && report.agents ? report.agents : []
   readonly property bool hasAgent: agents.length > 0

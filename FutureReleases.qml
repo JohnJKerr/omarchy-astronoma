@@ -8,6 +8,8 @@ Flickable {
   id: root
 
   property var releases: []
+  property bool earlier: false
+  property string boundary: ""
   property string installed: ""
   property bool versionUnknown: false
   property bool isDev: false
@@ -53,7 +55,7 @@ Flickable {
 
       Text {
         width: parent.width
-        text: "Beyond your release"
+        text: root.earlier ? "Before your flight log" : "Beyond your release"
         textFormat: Text.PlainText
         color: root.foreground
         font.family: root.fontFamily
@@ -64,9 +66,13 @@ Flickable {
 
       Text {
         width: parent.width
-        text: root.installed
-          ? "Published by Omarchy after " + root.installed
-          : "Published Omarchy releases not yet on this machine"
+        text: root.earlier
+          ? (root.boundary
+              ? "Published by Omarchy before the earliest recorded version, " + root.boundary
+              : "Published Omarchy releases before this machine's recorded history")
+          : (root.installed
+              ? "Published by Omarchy after " + root.installed
+              : "Published Omarchy releases not yet on this machine")
         textFormat: Text.PlainText
         color: root.dim
         font.family: root.fontFamily
@@ -83,7 +89,11 @@ Flickable {
       Text {
         width: parent.width
         text: {
-          if (root.loading) return "Looking through the telescope…"
+          if (root.loading) return root.earlier
+            ? "Consulting the astrolabe…" : "Looking through the telescope…"
+          if (root.earlier && !root.boundary) return "No starting version recorded"
+          if (root.earlier && root.status.error && !root.status.fetchedAt) return "Release list unavailable"
+          if (root.earlier) return "No earlier releases found"
           if (root.isDev) return "You are running a development checkout"
           if (root.versionUnknown) return "Installed version unavailable"
           if (root.status.error && !root.status.fetchedAt) return "Release list unavailable"
@@ -102,6 +112,9 @@ Flickable {
         width: parent.width
         text: {
           if (root.isDev) return "A development checkout cannot be compared safely with published releases."
+          if (root.earlier && !root.boundary) return "Astronoma needs a recorded Omarchy upgrade before it can identify releases this machine did not run."
+          if (root.earlier && root.status.error && !root.status.fetchedAt) return "Astronoma could not load Omarchy's published releases yet. Try refreshing when you are online."
+          if (root.earlier) return "The published catalogue contains nothing older than the first version in this flight log."
           if (root.versionUnknown) return "Astronoma could not compare this machine with the published release list."
           if (root.status.error && !root.status.fetchedAt) return "Astronoma could not load Omarchy's published releases yet. Try refreshing when you are online."
           return "There are no published Omarchy releases newer than the one installed."
