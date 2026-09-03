@@ -38,6 +38,9 @@ Item {
 
   readonly property var rows: service.historyRows
   readonly property bool hasRows: rows.length > 0
+  readonly property bool initialLoading: root.opened && service.loading && !service.everLoaded
+  readonly property bool detailLoading: !root.initialLoading
+    && !root.showingReleaseCatalogue && detailService.loading
   readonly property var selectedRow: hasRows && selectedIndex >= 0 && selectedIndex < rows.length
     ? rows[selectedIndex] : null
   // The detail pane renders `detail` when a specific update is loaded, and
@@ -216,6 +219,7 @@ Item {
   Service {
     id: detailService
     property var record: null
+    property bool loading: false
     property string loadedId: ""
     property string requestedId: ""
     property string activeId: ""
@@ -223,6 +227,13 @@ Item {
     function load(id) {
       if (!id) return
       requestedId = String(id)
+      if (requestedId !== loadedId) {
+        detailService.loading = true
+        // Do not leave the previously selected update on screen while the
+        // new one is being read. The loading surface gives the click an
+        // immediate, unambiguous response instead.
+        detailService.record = null
+      }
       if (detailProcess.running) return
       activeId = requestedId
       detailProcess.start([detailService.helper, "show", activeId, "--pretty"])
@@ -244,6 +255,7 @@ Item {
         }
         if (detailService.requestedId !== detailService.activeId)
           Qt.callLater(function() { detailService.load(detailService.requestedId) })
+        else detailService.loading = false
       }
     }
 
@@ -873,15 +885,30 @@ Item {
                         wrapMode: Text.WordWrap
                       }
 
-                      Text {
-                        visible: text !== ""
+                      Loader {
+                        id: releaseBodyLoader
                         width: parent.width
-                        text: Model.cleanReleaseBody(modelData.body)
-                        color: Qt.darker(root.foreground, 1.15)
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.bodySmall
+                        active: String(modelData.body || "") !== ""
+                        asynchronous: true
+
+                        sourceComponent: Text {
+                          width: releaseBodyLoader.width
+                          text: Model.cleanReleaseBody(modelData.body)
+                          color: Qt.darker(root.foreground, 1.15)
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.bodySmall
+                          textFormat: Text.PlainText
+                          wrapMode: Text.WordWrap
+                        }
+                      }
+
+                      Text {
+                        visible: releaseBodyLoader.status === Loader.Loading
+                        text: "Rendering release notes…"
                         textFormat: Text.PlainText
-                        wrapMode: Text.WordWrap
+                        color: root.faint
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
                       }
                     }
                   }
@@ -953,6 +980,36 @@ Item {
               faint: root.faint
               fontFamily: root.fontFamily
               onBack: root.showingEarlier = false
+            }
+
+            // Cover transient empty and stale bindings until the matching
+            // payload is ready. In particular, a large release can take a
+            // moment to lay out; its body Loader then finishes incrementally.
+            Rectangle {
+              anchors.fill: parent
+              visible: root.initialLoading || root.detailLoading
+              z: 20
+              color: root.background
+
+              Column {
+                anchors.centerIn: parent
+                spacing: Style.space(8)
+
+                BusyIndicator {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  running: parent.parent.visible
+                }
+
+                Text {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: root.initialLoading
+                    ? "Reading flight log…" : "Loading update…"
+                  textFormat: Text.PlainText
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+              }
             }
           }
 

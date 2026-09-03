@@ -787,6 +787,18 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("engineWarm: root.hoveredHistoryIndex >= 0", flightlog)
         self.assertIn("root.launchToHistory(historyEntry.index)", flightlog)
 
+    def test_flight_log_has_loading_states_and_defers_large_release_bodies(self):
+        root = Path(__file__).resolve().parents[1]
+        flightlog = (root / "Flightlog.qml").read_text()
+
+        self.assertIn("readonly property bool initialLoading:", flightlog)
+        self.assertIn("property bool loading: false", flightlog)
+        self.assertIn("detailService.loading = true", flightlog)
+        self.assertIn("visible: root.initialLoading || root.detailLoading", flightlog)
+        self.assertIn("text: root.initialLoading", flightlog)
+        self.assertIn("asynchronous: true", flightlog)
+        self.assertIn('text: "Rendering release notes…"', flightlog)
+
 
 class CliTests(TempEnv):
     def test_agent_summary_consent_can_be_revoked(self):
