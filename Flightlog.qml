@@ -128,13 +128,23 @@ Item {
     select(Math.max(0, Math.min(rows.length - 1, selectedIndex + delta)))
   }
 
-  function scrollDetail(pages) {
+  function scrollDetail(amount) {
     var view = root.showingReleaseCatalogue
       ? (root.showingEarlier ? earlierPage : futurePage) : detailFlick
     if (!view) return
     var maximum = Math.max(0, view.contentHeight - view.height)
-    var step = Math.max(Style.space(120), view.height * 0.85)
-    view.contentY = Math.max(0, Math.min(maximum, view.contentY + pages * step))
+    view.contentY = Math.max(0, Math.min(maximum, view.contentY + amount))
+  }
+
+  function scrollDetailLine(direction) {
+    scrollDetail(direction * Style.space(40))
+  }
+
+  function scrollDetailPage(direction) {
+    var view = root.showingReleaseCatalogue
+      ? (root.showingEarlier ? earlierPage : futurePage) : detailFlick
+    if (!view) return
+    scrollDetail(direction * view.height)
   }
 
   function scrollDetailToEnd(end) {
@@ -291,12 +301,14 @@ Item {
             else root.close()
             event.accepted = true
           }
-          else if (!root.showingReleaseCatalogue && (event.key === Qt.Key_Down || event.key === Qt.Key_J)) { root.moveSelection(1); event.accepted = true }
-          else if (!root.showingReleaseCatalogue && (event.key === Qt.Key_Up || event.key === Qt.Key_K)) { root.moveSelection(-1); event.accepted = true }
-          else if (event.key === Qt.Key_PageDown) { root.scrollDetail(1); event.accepted = true }
-          else if (event.key === Qt.Key_PageUp) { root.scrollDetail(-1); event.accepted = true }
+          else if (event.key === Qt.Key_Down) { root.scrollDetailLine(1); event.accepted = true }
+          else if (event.key === Qt.Key_Up) { root.scrollDetailLine(-1); event.accepted = true }
+          else if (!root.showingReleaseCatalogue && event.key === Qt.Key_J) { root.moveSelection(1); event.accepted = true }
+          else if (!root.showingReleaseCatalogue && event.key === Qt.Key_K) { root.moveSelection(-1); event.accepted = true }
+          else if (event.key === Qt.Key_PageDown) { root.scrollDetailPage(1); event.accepted = true }
+          else if (event.key === Qt.Key_PageUp) { root.scrollDetailPage(-1); event.accepted = true }
           else if (event.key === Qt.Key_Space) {
-            root.scrollDetail((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+            root.scrollDetailPage((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
             event.accepted = true
           }
           else if (event.key === Qt.Key_Home) { root.scrollDetailToEnd(false); event.accepted = true }
@@ -398,8 +410,8 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             text: root.showingReleaseCatalogue
-              ? "pgup/pgdn or space scroll · home/end jump · r refresh · esc flight log"
-              : "↑↓ select · pgup/pgdn or space scroll · home/end jump · p packages · r refresh · esc close"
+              ? "↑↓ scroll · pgup/pgdn or space scroll page · home/end jump · r refresh · esc flight log"
+              : "↑↓ scroll · j/k select · pgup/pgdn or space scroll page · home/end jump · p packages · r refresh · esc close"
             color: root.faint
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

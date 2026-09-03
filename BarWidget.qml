@@ -63,6 +63,19 @@ Panel {
     if (service.hasUnread) service.markSeen(service.unreadId)
   }
 
+  function scrollPanel(amount) {
+    var maximum = Math.max(0, flick.contentHeight - flick.height)
+    flick.contentY = Math.max(0, Math.min(maximum, flick.contentY + amount))
+  }
+
+  function scrollPanelLine(direction) {
+    scrollPanel(direction * Style.space(40))
+  }
+
+  function scrollPanelPage(direction) {
+    scrollPanel(direction * flick.height)
+  }
+
   implicitWidth: shouldShow ? button.implicitWidth : 0
   implicitHeight: button.implicitHeight
   visible: shouldShow
@@ -139,7 +152,9 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
+    // Focus the scrolling child. PanelKeyCatcher still sees navigation first
+    // via Keys.BeforeItem, while unhandled Page Up/Down reach the Flickable.
+    focusTarget: flick
     contentWidth: panel.fittedContentWidth(Style.space(360))
     contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
 
@@ -148,6 +163,9 @@ Panel {
       anchors.fill: parent
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
+      onMoveRequested: function(dx, dy) {
+        if (dy !== 0) root.scrollPanelLine(dy)
+      }
       onActivateRequested: root.openFlightlog()
       onTextKey: function(character) {
         // No summarise shortcut on purpose: it costs a real agent run, so
@@ -166,6 +184,16 @@ Panel {
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        Keys.onPressed: function(event) {
+          if (event.key === Qt.Key_PageDown) {
+            root.scrollPanelPage(1)
+            event.accepted = true
+          } else if (event.key === Qt.Key_PageUp) {
+            root.scrollPanelPage(-1)
+            event.accepted = true
+          }
+        }
 
         Column {
           id: column

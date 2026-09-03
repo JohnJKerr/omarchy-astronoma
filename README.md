@@ -153,9 +153,11 @@ once an update has been read. The flight log is still loaded and reachable:
 
 - **Bar icon**: left = summary card, right = full flight log, middle =
   refresh.
-- **Card**: `f` opens the flight log, `r` refreshes, Esc closes.
-- **Flight log**: `↑`/`↓` or `j`/`k` move through history, `p` jumps to the
-  package breakdown, `r` refreshes, Esc closes.
+- **Card**: `↑`/`↓` scroll, Page Up/Page Down scroll a whole page, `f` opens
+  the flight log, `r` refreshes, Esc closes.
+- **Flight log and release pages**: `↑`/`↓` scroll, Page Up/Page Down scroll
+  a whole page, `j`/`k` move through update history, `p` jumps to the package
+  breakdown, `r` refreshes, Esc closes.
 - **IPC**: `omarchy-shell astronoma <open|close|toggle|refresh>` for the
   flight log, `omarchy-shell astronoma.bar <open|close|toggle|refresh|status>`
   for the card. These targets are why the manifest sets `keepLoaded`: a
