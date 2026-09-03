@@ -170,14 +170,22 @@ Flickable {
           width: parent.width
           spacing: Style.space(10)
 
-          ReleasePlanet {
-            id: releasePlanet
-            release: releaseCard.modelData
+          Item {
+            id: planetSlot
+            // Patch, minor, and major planets use different artwork sizes,
+            // but every release title starts at the same horizontal point.
+            width: Style.space(64)
+            height: Style.space(64)
             anchors.verticalCenter: parent.verticalCenter
+
+            ReleasePlanet {
+              anchors.centerIn: parent
+              release: releaseCard.modelData
+            }
           }
 
           Text {
-            width: parent.width - releasePlanet.width - parent.spacing
+            width: parent.width - planetSlot.width - parent.spacing
             anchors.verticalCenter: parent.verticalCenter
             text: Model.releaseHeading(releaseCard.modelData)
             textFormat: Text.PlainText

@@ -11,6 +11,8 @@ Item {
 
   property var releases: []
   property int selectedIndex: 0
+  property bool futureSelected: false
+  property bool earlierSelected: false
   property color foreground: Color.foreground
   property color accent: Color.accent
   property string fontFamily: Style.font.family
@@ -34,6 +36,7 @@ Item {
 
       readonly property int distance: Math.abs(index - root.selectedIndex)
       readonly property bool selected: index === root.selectedIndex
+        && !root.futureSelected && !root.earlierSelected
 
       width: Style.space(130)
       height: root.height
@@ -99,13 +102,16 @@ Item {
     // instead of popping into an already-settled side slot.
     property int virtualIndex: 0
     property string instrument: ""
+    readonly property bool selected: instrument === "telescope"
+      ? root.futureSelected : root.earlierSelected
     readonly property int distance: Math.abs(virtualIndex - root.selectedIndex)
     width: Style.space(130)
     height: root.height
     x: root.width / 2 - width / 2
       + (root.selectedIndex - virtualIndex) * root.orbitSpacing
-    opacity: distance <= 1 ? 0.55 : 0
+    opacity: distance <= 1 ? (selected ? 1 : 0.55) : 0
     visible: opacity > 0
+    z: selected ? 2 : 1
 
     Behavior on x { NumberAnimation { duration: 360; easing.type: Easing.InOutCubic } }
     Behavior on opacity { NumberAnimation { duration: 180 } }

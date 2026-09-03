@@ -108,7 +108,13 @@ Item {
   }
 
   function selectRelease(index) {
-    if (index < 0 || index >= solarReleases.length || index === selectedReleaseIndex) return
+    if (index < 0 || index >= solarReleases.length) return
+    // A planet is also the route back from either catalogue. Do this before
+    // the same-index guard: the currently selected release is still a valid
+    // navigation target when the telescope or astrolabe page is open.
+    showingUpcoming = false
+    showingEarlier = false
+    if (index === selectedReleaseIndex) return
     selectedReleaseIndex = index
     rocketMark.ignited = true
     launchTimer.restart()
@@ -376,6 +382,8 @@ Item {
               height: implicitHeight
               releases: root.solarReleases
               selectedIndex: Math.min(root.selectedReleaseIndex, Math.max(0, root.solarReleases.length - 1))
+              futureSelected: root.showingUpcoming
+              earlierSelected: root.showingEarlier
               foreground: root.foreground
               accent: Color.accent
               fontFamily: root.fontFamily

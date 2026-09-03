@@ -748,6 +748,22 @@ class SecurityBoundaryTests(TempEnv):
         self.assertNotIn("actions/checkout@v4", workflow)
         self.assertNotIn("actions/setup-python@v5", workflow)
 
+    def test_release_catalogue_navigation_and_alignment_are_wired(self):
+        root = Path(__file__).parents[1]
+        flightlog = (root / "Flightlog.qml").read_text()
+        solar_system = (root / "SolarSystem.qml").read_text()
+        future_releases = (root / "FutureReleases.qml").read_text()
+        self.assertLess(
+            flightlog.index("showingUpcoming = false", flightlog.index("function selectRelease")),
+            flightlog.index("if (index === selectedReleaseIndex) return"),
+        )
+        self.assertIn("futureSelected: root.showingUpcoming", flightlog)
+        self.assertIn("earlierSelected: root.showingEarlier", flightlog)
+        self.assertIn("&& !root.futureSelected && !root.earlierSelected", solar_system)
+        self.assertIn("opacity: distance <= 1 ? (selected ? 1 : 0.55) : 0", solar_system)
+        self.assertIn("id: planetSlot", future_releases)
+        self.assertIn("width: Style.space(64)", future_releases)
+
 
 class CliTests(TempEnv):
     def test_agent_summary_consent_can_be_revoked(self):
