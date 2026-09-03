@@ -764,6 +764,15 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("id: planetSlot", future_releases)
         self.assertIn("width: Style.space(64)", future_releases)
 
+    def test_flight_log_history_rows_show_release_sized_planets(self):
+        root = Path(__file__).resolve().parents[1]
+        flightlog = (root / "Flightlog.qml").read_text()
+
+        self.assertIn("id: historyPlanetSlot", flightlog)
+        self.assertIn("width: Style.space(64)", flightlog)
+        self.assertIn("ReleasePlanet {", flightlog)
+        self.assertIn("String(historyEntry.modelData.omarchy.to)", flightlog)
+
 
 class CliTests(TempEnv):
     def test_agent_summary_consent_can_be_revoked(self):

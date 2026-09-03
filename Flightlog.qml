@@ -468,15 +468,38 @@ Item {
 
                     Repeater {
                       model: root.rows
-                      HistoryRow {
+                      Row {
+                        id: historyEntry
                         required property var modelData
                         required property int index
                         width: listColumn.width
-                        row: modelData
-                        selected: index === root.selectedIndex
-                        foreground: root.foreground
-                        fontFamily: root.fontFamily
-                        onActivated: root.select(index)
+                        spacing: Style.space(8)
+
+                        HistoryRow {
+                          width: parent.width - historyPlanetSlot.width - parent.spacing
+                          anchors.verticalCenter: parent.verticalCenter
+                          row: historyEntry.modelData
+                          selected: historyEntry.index === root.selectedIndex
+                          foreground: root.foreground
+                          fontFamily: root.fontFamily
+                          onActivated: root.select(historyEntry.index)
+                        }
+
+                        Item {
+                          id: historyPlanetSlot
+                          width: Style.space(64)
+                          height: Style.space(64)
+
+                          ReleasePlanet {
+                            anchors.centerIn: parent
+                            visible: !!historyEntry.modelData.omarchy
+                              && !!historyEntry.modelData.omarchy.to
+                            release: ({
+                              version: visible
+                                ? String(historyEntry.modelData.omarchy.to) : ""
+                            })
+                          }
+                        }
                       }
                     }
                   }
