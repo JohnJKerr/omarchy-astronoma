@@ -856,6 +856,27 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("asynchronous: true", flightlog)
         self.assertIn('text: "Rendering release notes…"', flightlog)
 
+    def test_planet_selection_does_not_tear_down_detail_before_load_finishes(self):
+        root = Path(__file__).resolve().parents[1]
+        flightlog = (root / "Flightlog.qml").read_text()
+        load_body = flightlog[
+            flightlog.index("    function load(id) {"):
+            flightlog.index("\n    BoundedProcess {", flightlog.index("    function load(id) {"))
+        ]
+
+        # The loading veil hides the previous detail. Keeping that detail alive
+        # avoids a synchronous teardown blocking the solar-system animation's
+        # first frame; the record is replaced when the helper finishes.
+        self.assertNotIn("detailService.record = null", load_body)
+
+    def test_solar_system_selection_has_no_navigation_transition(self):
+        root = Path(__file__).resolve().parents[1]
+        solar_system = (root / "SolarSystem.qml").read_text()
+
+        self.assertNotIn("Behavior on x", solar_system)
+        self.assertNotIn("Behavior on opacity", solar_system)
+        self.assertNotIn("Behavior on artOpacity", solar_system)
+
 
 class CliTests(TempEnv):
     def test_agent_summary_consent_can_be_revoked(self):

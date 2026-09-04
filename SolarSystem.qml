@@ -3,8 +3,8 @@ import qs.Commons
 
 // A deliberately typographic little release map. Releases are laid out in
 // chronological space (older left, newer right), while the selected release
-// occupies the centre. Moving the selection animates the same planet glyphs
-// through the system instead of replacing three static labels.
+// occupies the centre. Selection snaps into place so navigation feedback is
+// immediate even while a large release body is still loading.
 Item {
   id: root
   clip: true
@@ -47,9 +47,6 @@ Item {
       visible: opacity > 0
       z: selected ? 2 : 1
 
-      Behavior on x { NumberAnimation { duration: 360; easing.type: Easing.InOutCubic } }
-      Behavior on opacity { NumberAnimation { duration: 180 } }
-
       Column {
         anchors.centerIn: parent
         spacing: Style.space(2)
@@ -71,7 +68,6 @@ Item {
             // in place around its own centre.
             spinDuration: 11000 + (planet.index % 5) * 700
 
-            Behavior on artOpacity { NumberAnimation { duration: 180 } }
           }
         }
 
@@ -124,9 +120,6 @@ Item {
     opacity: distance <= 1 ? (selected ? 1 : 0.55) : 0
     visible: opacity > 0
     z: selected ? 2 : 1
-
-    Behavior on x { NumberAnimation { duration: 360; easing.type: Easing.InOutCubic } }
-    Behavior on opacity { NumberAnimation { duration: 180 } }
 
     Image {
       anchors.centerIn: parent

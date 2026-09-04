@@ -229,10 +229,10 @@ Item {
       requestedId = String(id)
       if (requestedId !== loadedId) {
         detailService.loading = true
-        // Do not leave the previously selected update on screen while the
-        // new one is being read. The loading surface gives the click an
-        // immediate, unambiguous response instead.
-        detailService.record = null
+        // The loading surface covers the previous update. Keep its detail
+        // tree alive underneath until the replacement is ready: tearing down
+        // a large release synchronously here can prevent the solar-system
+        // selection animation from painting its first frame.
       }
       if (detailProcess.running) return
       activeId = requestedId
