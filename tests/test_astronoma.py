@@ -417,6 +417,49 @@ class ReleaseTests(TempEnv):
         finally:
             releases.urllib.request.urlopen = original
 
+    def test_live_payload_enforces_release_cardinality_before_conversion(self):
+        import contextlib
+        import io
+        from astronoma import releases
+
+        payload = [{
+            "tag_name": "v4.0.1", "name": "v4.0.1",
+            "published_at": "", "body": "", "html_url": "",
+        }] * (releases.MAX_RELEASES + 1)
+
+        @contextlib.contextmanager
+        def fake_urlopen(*_args, **_kwargs):
+            yield io.BytesIO(json.dumps(payload).encode())
+
+        original = releases.urllib.request.urlopen
+        releases.urllib.request.urlopen = fake_urlopen
+        try:
+            with self.assertRaisesRegex(ValueError, "too many releases"):
+                releases._fetch()
+        finally:
+            releases.urllib.request.urlopen = original
+
+    def test_live_payload_drops_fields_over_the_rendering_budget(self):
+        import contextlib
+        import io
+        from astronoma import releases
+
+        payload = [{
+            "tag_name": "v4.0.1", "name": "x" * (releases.MAX_METADATA_STRING + 1),
+            "published_at": "", "body": "", "html_url": "",
+        }]
+
+        @contextlib.contextmanager
+        def fake_urlopen(*_args, **_kwargs):
+            yield io.BytesIO(json.dumps(payload).encode())
+
+        original = releases.urllib.request.urlopen
+        releases.urllib.request.urlopen = fake_urlopen
+        try:
+            self.assertEqual(releases._fetch(), [])
+        finally:
+            releases.urllib.request.urlopen = original
+
     def test_unknown_previous_version_does_not_claim_the_whole_history(self):
         from astronoma import releases
         self._seed_cache()
@@ -876,7 +919,6 @@ class SecurityBoundaryTests(TempEnv):
         flightlog = (root / "Flightlog.qml").read_text()
 
         self.assertIn("readonly property bool initialLoading:", flightlog)
-        self.assertIn("property bool loading: false", flightlog)
         self.assertIn("detailService.loading = true", flightlog)
         self.assertIn("visible: root.initialLoading || root.detailLoading", flightlog)
         self.assertIn("text: root.initialLoading", flightlog)

@@ -26,6 +26,7 @@ MAX_PAYLOAD_BYTES = 8 * 1024 * 1024
 MAX_CACHE_BYTES = 8 * 1024 * 1024
 MAX_RELEASES = 30
 MAX_RELEASE_STRING = 256 * 1024
+MAX_METADATA_STRING = 2048
 # Opening the panel asks for a refresh every time, and unauthenticated GitHub
 # allows 60 requests an hour. Releases do not land often enough for a second
 # fetch inside this window to return anything new.
@@ -75,6 +76,31 @@ class Release:
         )
 
 
+def _valid_release_fields(payload: dict, api: bool = False) -> bool:
+    """Validate the fields we consume before constructing display data.
+
+    GitHub may add unrelated API fields, so those are explicitly ignored;
+    every field crossing into Astronoma has an exact type and length budget.
+    """
+    names = {
+        "tag": "tag_name" if api else "tag",
+        "name": "name",
+        "publishedAt": "published_at" if api else "publishedAt",
+        "body": "body",
+        "url": "html_url" if api else "url",
+    }
+    for local_name, source_name in names.items():
+        value = payload.get(source_name)
+        # The API documents nullable name/body fields. The constructors turn
+        # those into empty strings, but no other scalar/container is accepted.
+        if value is None and local_name in ("name", "body"):
+            continue
+        limit = MAX_RELEASE_STRING if local_name == "body" else MAX_METADATA_STRING
+        if not isinstance(value, str) or len(value) > limit:
+            return False
+    return True
+
+
 def _read_cache() -> dict:
     try:
         data = paths.read_json(paths.releases_cache(), MAX_CACHE_BYTES)
@@ -92,8 +118,7 @@ def _read_cache() -> dict:
         item for item in items
         if (isinstance(item, dict) and required <= set(item) <= allowed
             and all(isinstance(item[key], str) for key in item)
-            and len(item["body"]) <= MAX_RELEASE_STRING
-            and all(len(item[key]) <= 2048 for key in item if key != "body"))
+            and _valid_release_fields(item))
     ]
     return {**data, "releases": valid_items}
 
@@ -122,7 +147,12 @@ def _fetch(limit: int = 30, timeout: int = 15) -> list[Release]:
     payload = json.loads(raw.decode("utf-8"))
     if not isinstance(payload, list):
         raise ValueError("unexpected releases payload")
-    parsed = [Release.from_api(item) for item in payload if isinstance(item, dict)]
+    if len(payload) > min(MAX_RELEASES, max(0, int(limit))):
+        raise ValueError("too many releases in payload")
+    parsed = [
+        Release.from_api(item) for item in payload
+        if isinstance(item, dict) and _valid_release_fields(item, api=True)
+    ]
     return [release for release in parsed if release.tag]
 
 

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.johnjkerr.astronoma",
   "name": "Astronoma",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "John Kerr",
   "license": "MIT",
   "description": "A local flight log for Omarchy updates: releases crossed, package changes, migrations, warnings, and optional safe agent summaries.",

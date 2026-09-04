@@ -219,7 +219,6 @@ Item {
   Service {
     id: detailService
     property var record: null
-    property bool loading: false
     property string loadedId: ""
     property string requestedId: ""
     property string activeId: ""
