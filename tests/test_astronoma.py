@@ -821,6 +821,33 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("to: 5", solar_system)
         self.assertIn("easing.type: Easing.InOutSine", solar_system)
 
+    def test_selected_planet_has_a_sporadic_flying_saucer(self):
+        root = Path(__file__).parents[1]
+        solar_system = (root / "SolarSystem.qml").read_text()
+
+        self.assertIn("component FlyingSaucer: Item", solar_system)
+        self.assertIn("active: planet.selected && planet.visible", solar_system)
+        self.assertTrue((root / "assets" / "release-flying-saucer.png").is_file())
+        self.assertIn('source: "assets/release-flying-saucer.png"', solar_system)
+        self.assertIn("Math.random()", solar_system)
+        self.assertIn("flightDuration = 650 + Math.floor(Math.random() * 250)", solar_system)
+        self.assertIn("idleDuration = 8000 + Math.floor(Math.random() * 6000)", solar_system)
+        self.assertIn("var leftToRight = Math.random() < 0.5", solar_system)
+        self.assertIn("var verticalOffset = Style.space(8 + Math.random() * 12)", solar_system)
+        self.assertIn("flightX = leftToRight ? -radiusX : radiusX", solar_system)
+        self.assertIn("destinationX = -flightX", solar_system)
+        self.assertIn("destinationY = -flightY", solar_system)
+        self.assertIn("MultiEffect {", solar_system)
+        self.assertIn("colorizationColor: root.accent", solar_system)
+        self.assertIn("opacity: 0.14", solar_system)
+        self.assertIn("PauseAnimation { duration: saucer.idleDuration }", solar_system)
+        self.assertLess(
+            solar_system.index("PauseAnimation { duration: saucer.idleDuration }"),
+            solar_system.index("ScriptAction { script: saucer.chooseNextPass() }"),
+        )
+        self.assertIn("running: saucer.active", solar_system)
+        self.assertIn("loops: Animation.Infinite", solar_system)
+
     def test_flight_log_history_rows_show_release_sized_planets(self):
         root = Path(__file__).resolve().parents[1]
         flightlog = (root / "Flightlog.qml").read_text()

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import qs.Commons
 
 // A deliberately typographic little release map. Releases are laid out in
@@ -69,6 +70,11 @@ Item {
             spinDuration: 11000 + (planet.index % 5) * 700
 
           }
+
+          FlyingSaucer {
+            anchors.centerIn: parent
+            active: planet.selected && planet.visible
+          }
         }
 
         Text {
@@ -97,6 +103,111 @@ Item {
         enabled: !planet.selected
         onTapped: root.releaseActivated(planet.index)
       }
+    }
+  }
+
+  // The selected world occasionally attracts a tiny visitor. Each pass uses
+  // opposite endpoints so it crosses the planet, with enough silence between
+  // appearances that it remains a surprise.
+  component FlyingSaucer: Item {
+    id: saucer
+
+    property bool active: false
+    property real destinationX: 0
+    property real destinationY: 0
+    property real flightX: 0
+    property real flightY: 0
+    property int flightDuration: 600
+    property int idleDuration: 8000
+
+    width: Style.space(25)
+    height: Style.space(15)
+    visible: active
+    opacity: 0
+    z: 3
+    transform: Translate {
+      x: saucer.flightX
+      y: saucer.flightY
+    }
+
+    function chooseNextPass() {
+      var leftToRight = Math.random() < 0.5
+      var radiusX = Style.space(48 + Math.random() * 10)
+      var verticalDirection = Math.random() < 0.5 ? -1 : 1
+      var verticalOffset = Style.space(8 + Math.random() * 12)
+      flightX = leftToRight ? -radiusX : radiusX
+      flightY = verticalDirection * verticalOffset
+      destinationX = -flightX
+      destinationY = -flightY
+      flightDuration = 650 + Math.floor(Math.random() * 250)
+      idleDuration = 8000 + Math.floor(Math.random() * 6000)
+    }
+
+    onActiveChanged: {
+      opacity = 0
+      if (active) {
+        idleDuration = 8000 + Math.floor(Math.random() * 6000)
+      }
+    }
+
+    Image {
+      id: saucerArt
+      anchors.fill: parent
+      source: "assets/release-flying-saucer.png"
+      fillMode: Image.PreserveAspectFit
+      smooth: true
+      mipmap: true
+    }
+
+    MultiEffect {
+      anchors.fill: saucerArt
+      source: saucerArt
+      colorization: 1
+      colorizationColor: root.accent
+      opacity: 0.14
+    }
+
+    SequentialAnimation {
+      running: saucer.active
+      loops: Animation.Infinite
+
+      PauseAnimation { duration: saucer.idleDuration }
+      ScriptAction { script: saucer.chooseNextPass() }
+
+      ParallelAnimation {
+        NumberAnimation {
+          target: saucer
+          property: "flightX"
+          to: saucer.destinationX
+          duration: saucer.flightDuration
+          easing.type: Easing.InOutSine
+        }
+        NumberAnimation {
+          target: saucer
+          property: "flightY"
+          to: saucer.destinationY
+          duration: saucer.flightDuration
+          easing.type: Easing.InOutSine
+        }
+        SequentialAnimation {
+          NumberAnimation {
+            target: saucer
+            property: "opacity"
+            to: 1
+            duration: Math.min(180, saucer.flightDuration / 3)
+          }
+          PauseAnimation {
+            duration: Math.max(1, saucer.flightDuration - 360)
+          }
+          NumberAnimation {
+            target: saucer
+            property: "opacity"
+            to: 0
+            duration: Math.min(180, saucer.flightDuration / 3)
+          }
+        }
+      }
+
     }
   }
 
