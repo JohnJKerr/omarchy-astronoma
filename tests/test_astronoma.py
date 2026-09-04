@@ -764,6 +764,44 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("id: planetSlot", future_releases)
         self.assertIn("width: Style.space(64)", future_releases)
 
+    def test_only_solar_system_planets_spin_in_place(self):
+        root = Path(__file__).parents[1]
+        release_planet = (root / "ReleasePlanet.qml").read_text()
+        solar_system = (root / "SolarSystem.qml").read_text()
+        other_uses = "\n".join(
+            (root / name).read_text()
+            for name in ("Flightlog.qml", "FutureReleases.qml")
+        )
+
+        self.assertIn("property bool spinning: false", release_planet)
+        for name in ("patch", "minor", "major"):
+            self.assertIn(
+                f'"assets/release-planet-{name}-spinning.png"',
+                release_planet,
+            )
+        self.assertIn('"assets/release-planet-minor-rings.png"', release_planet)
+        self.assertIn("readonly property int spinFrameCount: 64", release_planet)
+        self.assertIn("readonly property int spinFrameColumns: 32", release_planet)
+        self.assertIn("readonly property bool spinActive: spinning", release_planet)
+        self.assertIn("readonly property string spinSource:", release_planet)
+        self.assertIn("visible: root.kind === 1", release_planet)
+        self.assertIn(
+            "(root.spinFrame % root.spinFrameColumns) * root.spinFrameWidth",
+            release_planet,
+        )
+        self.assertIn("running: root.spinActive", release_planet)
+        self.assertNotIn("RotationAnimator", release_planet)
+        self.assertNotIn("Timer {", release_planet)
+        self.assertIn("property real spinBlend: 0", release_planet)
+        self.assertNotIn("opacity: root.artOpacity * (1 - root.spinBlend)", release_planet)
+        self.assertIn("layer.enabled: true", release_planet)
+        self.assertIn("opacity: root.spinBlend", release_planet)
+        self.assertNotIn("opacity: root.artOpacity * root.spinBlend", release_planet)
+        self.assertIn("easing.type: Easing.Linear", release_planet)
+        self.assertIn("spinning: planet.visible", solar_system)
+        self.assertIn("spinDuration: 11000 + (planet.index % 5) * 700", solar_system)
+        self.assertNotIn("spinning: true", other_uses)
+
     def test_flight_log_history_rows_show_release_sized_planets(self):
         root = Path(__file__).resolve().parents[1]
         flightlog = (root / "Flightlog.qml").read_text()

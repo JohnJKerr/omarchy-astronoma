@@ -66,6 +66,10 @@ Item {
             minorSize: Style.space(78)
             majorSize: Style.space(98)
             artOpacity: planet.selected ? 1 : 0.72
+            spinning: planet.visible
+            // Keep neighbouring worlds subtly out of sync while each rotates
+            // in place around its own centre.
+            spinDuration: 11000 + (planet.index % 5) * 700
 
             Behavior on artOpacity { NumberAnimation { duration: 180 } }
           }
