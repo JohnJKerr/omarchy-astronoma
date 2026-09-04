@@ -113,6 +113,7 @@ Item {
     // instead of popping into an already-settled side slot.
     property int virtualIndex: 0
     property string instrument: ""
+    property real instrumentAngle: 0
     readonly property bool selected: instrument === "telescope"
       ? root.futureSelected : root.earlierSelected
     readonly property int distance: Math.abs(virtualIndex - root.selectedIndex)
@@ -132,11 +133,62 @@ Item {
       width: Style.space(84)
       height: width
       source: uncharted.instrument === "telescope"
-        ? "assets/release-telescope.png" : "assets/release-astrolabe.png"
+        ? "assets/release-telescope-stand.png"
+        : "assets/release-astrolabe-body.png"
       sourceClipRect: Qt.rect(0, 0, 272, 320)
       fillMode: Image.PreserveAspectFit
-      smooth: false
-      mipmap: false
+      smooth: true
+      mipmap: true
+    }
+
+    Image {
+      id: movingInstrument
+      anchors.centerIn: parent
+      width: Style.space(84)
+      height: width
+      source: uncharted.instrument === "telescope"
+        ? "assets/release-telescope-tube.png"
+        : "assets/release-astrolabe-dial.png"
+      sourceClipRect: Qt.rect(0, 0, 272, 320)
+      fillMode: Image.PreserveAspectFit
+      smooth: true
+      mipmap: true
+
+      transform: Rotation {
+        // Both layers retain the source canvas, so these origins are the
+        // instrument pivots after PreserveAspectFit scales 272x320 into 84px.
+        origin.x: uncharted.instrument === "telescope"
+          ? Style.space(30.2) : Style.space(42)
+        origin.y: uncharted.instrument === "telescope"
+          ? Style.space(40.4) : Style.space(44.1)
+        angle: uncharted.instrumentAngle
+      }
+    }
+
+    NumberAnimation on instrumentAngle {
+      running: uncharted.visible && uncharted.instrument === "astrolabe"
+      loops: Animation.Infinite
+      from: 0
+      to: 360
+      duration: 16000
+      easing.type: Easing.Linear
+    }
+
+    SequentialAnimation on instrumentAngle {
+      running: uncharted.visible && uncharted.instrument === "telescope"
+      loops: Animation.Infinite
+      NumberAnimation {
+        from: -4
+        to: 5
+        duration: 1800
+        easing.type: Easing.InOutSine
+      }
+      NumberAnimation {
+        from: 5
+        to: -4
+        duration: 1800
+        easing.type: Easing.InOutSine
+      }
     }
 
     HoverHandler {

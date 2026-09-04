@@ -802,6 +802,25 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("spinDuration: 11000 + (planet.index % 5) * 700", solar_system)
         self.assertNotIn("spinning: true", other_uses)
 
+    def test_solar_system_instruments_animate_their_moving_parts(self):
+        root = Path(__file__).parents[1]
+        solar_system = (root / "SolarSystem.qml").read_text()
+
+        for asset in (
+            "release-astrolabe-body.png",
+            "release-astrolabe-dial.png",
+            "release-telescope-stand.png",
+            "release-telescope-tube.png",
+        ):
+            self.assertTrue((root / "assets" / asset).is_file())
+            self.assertIn(f'"assets/{asset}"', solar_system)
+        self.assertIn('instrument === "astrolabe"', solar_system)
+        self.assertIn('instrument === "telescope"', solar_system)
+        self.assertIn("to: 360", solar_system)
+        self.assertIn("from: -4", solar_system)
+        self.assertIn("to: 5", solar_system)
+        self.assertIn("easing.type: Easing.InOutSine", solar_system)
+
     def test_flight_log_history_rows_show_release_sized_planets(self):
         root = Path(__file__).resolve().parents[1]
         flightlog = (root / "Flightlog.qml").read_text()
