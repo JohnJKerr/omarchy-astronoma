@@ -982,11 +982,13 @@ Item {
               onBack: root.showingEarlier = false
             }
 
-            // Cover transient empty and stale bindings until the matching
-            // payload is ready. In particular, a large release can take a
-            // moment to lay out; its body Loader then finishes incrementally.
+            // Cover only the main body while its matching payload is read.
+            // The history menu and planet navigator stay visible and update
+            // immediately, so moving between releases still feels direct.
             Rectangle {
-              anchors.fill: parent
+              x: detailFlick.x
+              width: detailFlick.width
+              height: parent.height
               visible: root.initialLoading || root.detailLoading
               z: 20
               color: root.background
