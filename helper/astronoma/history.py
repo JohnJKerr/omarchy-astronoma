@@ -146,14 +146,17 @@ def _valid_record(data, identifier: str) -> bool:
     def text(value, limit=1024, optional=False):
         return (optional and value is None) or isinstance(value, str) and len(value) <= limit
 
-    def change(value):
+    def change(value, expected_action=None):
         return (isinstance(value, dict) and set(value) <= {"name", "action", "from", "to", "aur"}
                 and text(value.get("name")) and text(value.get("action"), 32)
+                and value.get("action") in ("upgraded", "installed", "removed")
+                and (expected_action is None or value.get("action") == expected_action)
                 and text(value.get("from"), optional=True) and text(value.get("to"), optional=True)
                 and ("aur" not in value or isinstance(value["aur"], bool)))
 
-    def changes(value):
-        return isinstance(value, list) and len(value) <= 5000 and all(change(item) for item in value)
+    def changes(value, expected_action=None):
+        return (isinstance(value, list) and len(value) <= 5000
+                and all(change(item, expected_action) for item in value))
 
     omarchy, packages, sources = data["omarchy"], data["packages"], data["sources"]
     strings = (data["migrations"], data["warnings"], data["errors"])
@@ -162,13 +165,16 @@ def _valid_record(data, identifier: str) -> bool:
             and text(omarchy["from"], optional=True) and text(omarchy["to"], optional=True)
             and isinstance(omarchy["changed"], bool)
             and isinstance(packages, dict) and set(packages) == {"upgraded", "installed", "removed"}
-            and all(changes(packages[key]) for key in packages) and changes(data["aur"])
+            and all(changes(packages[key], key) for key in packages)
+            and changes(data["aur"])
             and all(isinstance(items, list) and len(items) <= 1000
                     and all(text(item, 65536) for item in items) for items in strings)
             and all(isinstance(data[key], bool) for key in ("failed", "aurSkipped", "partial"))
             and isinstance(sources, dict) and set(sources) == {"pacmanLog", "updateLog", "logDigest"}
             and isinstance(sources["pacmanLog"], bool) and isinstance(sources["updateLog"], bool)
-            and text(sources["logDigest"], 64, optional=True))
+            and text(sources["logDigest"], 64, optional=True)
+            and (sources["logDigest"] is None
+                 or re.fullmatch(r"[0-9a-f]{64}", sources["logDigest"]) is not None))
 
 
 def mark_seen(identifier: str) -> str | None:

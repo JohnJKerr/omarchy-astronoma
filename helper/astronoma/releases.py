@@ -107,7 +107,8 @@ def _read_cache() -> dict:
     except (OSError, ValueError):
         return {}
     if not (isinstance(data, dict) and set(data) == {"schema", "fetchedAt", "releases"}
-            and data.get("schema") == CACHE_SCHEMA and isinstance(data.get("fetchedAt"), int)):
+            and data.get("schema") == CACHE_SCHEMA
+            and type(data.get("fetchedAt")) is int and data["fetchedAt"] >= 0):
         return {}
     items = data.get("releases")
     required = {"tag", "name", "publishedAt", "body", "url"}

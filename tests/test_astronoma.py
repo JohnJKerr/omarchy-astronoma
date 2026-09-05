@@ -463,6 +463,16 @@ class CaptureTests(TempEnv):
 
 
 class HistoryTests(TempEnv):
+    def test_record_schema_enforces_package_actions_and_digest_shape(self):
+        from astronoma import capture, history, pacmanlog
+
+        record = capture._record_from(pacmanlog.sessions()[0], None, [])
+        record["packages"]["installed"][0]["action"] = "upgraded"
+        self.assertFalse(history._valid_record(record, record["id"]))
+        record = capture._record_from(pacmanlog.sessions()[0], None, [])
+        record["sources"]["logDigest"] = "not-a-digest"
+        self.assertFalse(history._valid_record(record, record["id"]))
+
     def test_save_rejects_invalid_and_oversized_records_before_writing(self):
         from unittest import mock
         from astronoma import capture, history, pacmanlog
@@ -998,6 +1008,19 @@ class ReportTests(TempEnv):
 
 
 class SecurityBoundaryTests(TempEnv):
+    def test_json_reader_rejects_depth_invalid_utf8_and_nan(self):
+        from astronoma import paths
+
+        self.state.mkdir(mode=0o700)
+        target = self.state / "payload.json"
+        fixtures = (b"[[[0]]]", b"\xff", b'{"value": NaN}')
+        for raw in fixtures:
+            with self.subTest(raw=raw):
+                target.write_bytes(raw)
+                target.chmod(0o600)
+                with self.assertRaises(ValueError):
+                    paths.read_json(target, 1024, max_depth=2)
+
     def test_private_directory_enumeration_stops_at_its_entry_limit(self):
         from astronoma import paths
 
@@ -1033,12 +1056,13 @@ class SecurityBoundaryTests(TempEnv):
         self.assertEqual(len(os.listdir("/proc/self/fd")), before)
 
     def test_state_root_symlink_is_rejected(self):
-        from astronoma import history
+        from astronoma import capture, history, pacmanlog
         target = self.state.parent / "attacker-state"
         target.mkdir()
         self.state.symlink_to(target, target_is_directory=True)
+        record = capture._record_from(pacmanlog.sessions()[0], None, [])
         with self.assertRaises(OSError):
-            history.save({"schema": 1, "id": "2026-08-28-2300"})
+            history.save(record)
         self.assertEqual(list(target.iterdir()), [])
 
     def test_history_rejects_symlink_and_oversized_leaves(self):

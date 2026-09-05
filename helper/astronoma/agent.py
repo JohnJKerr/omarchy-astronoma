@@ -314,7 +314,7 @@ def cached_summary(identifier: str) -> dict | None:
              and data.get("id") == identifier
              and isinstance(data.get("agent"), str) and len(data["agent"]) <= 32
              and isinstance(data.get("agentName"), str) and len(data["agentName"]) <= 80
-             and isinstance(data.get("generatedAt"), int)
+             and type(data.get("generatedAt")) is int and data["generatedAt"] >= 0
              and isinstance(data.get("text"), str) and len(data["text"]) <= 128 * 1024
              and set(data) <= {"ok", "id", "agent", "agentName", "generatedAt", "text"})
     return data if valid else None

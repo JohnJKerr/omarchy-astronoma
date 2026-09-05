@@ -182,8 +182,42 @@ def trusted_leaf_identity(target: Path, allowed_owners: tuple[int, ...]) -> list
         os.close(descriptor)
 
 
-def read_json(target: Path, max_bytes: int, private: bool = True):
-    return json.loads(read_bytes(target, max_bytes, private).decode("utf-8"))
+def _json_depth_within(raw: bytes, max_depth: int) -> bool:
+    depth = 0
+    quoted = escaped = False
+    for byte in raw:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:
+                escaped = True
+            elif byte == 0x22:
+                quoted = False
+            continue
+        if byte == 0x22:
+            quoted = True
+        elif byte in (0x7B, 0x5B):
+            depth += 1
+            if depth > max_depth:
+                return False
+        elif byte in (0x7D, 0x5D):
+            depth -= 1
+    return True
+
+
+def read_json(target: Path, max_bytes: int, private: bool = True,
+              max_depth: int = 8):
+    raw = read_bytes(target, max_bytes, private)
+    if not _json_depth_within(raw, max_depth):
+        raise ValueError(f"JSON exceeds {max_depth} level depth limit")
+
+    def reject_constant(value):
+        raise ValueError(f"invalid JSON numeric constant: {value}")
+
+    try:
+        return json.loads(raw.decode("utf-8"), parse_constant=reject_constant)
+    except (UnicodeError, RecursionError, json.JSONDecodeError) as error:
+        raise ValueError("invalid JSON") from error
 
 
 def json_within_limits(value, max_items: int, max_string: int, max_depth: int = 8) -> bool:
