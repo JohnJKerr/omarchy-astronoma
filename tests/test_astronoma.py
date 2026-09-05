@@ -528,6 +528,73 @@ class HistoryTests(TempEnv):
 
 
 class ReleaseTests(TempEnv):
+    def test_non_refresh_load_is_cache_only_even_when_missing_or_expired(self):
+        from astronoma import releases
+
+        calls = []
+        original = releases._fetch
+        releases._fetch = lambda: calls.append(1) or []
+        try:
+            items, status = releases.load(refresh=False)
+            self.assertEqual((items, calls), ([], []))
+            self.assertTrue(status["stale"])
+            self._seed_cache(fetched_at=1)
+            items, status = releases.load(refresh=False)
+            self.assertEqual((len(items), calls), (3, []))
+            self.assertTrue(status["stale"])
+        finally:
+            releases._fetch = original
+
+    def test_failed_refresh_is_persisted_and_throttles_retry(self):
+        from astronoma import releases
+
+        calls = []
+        original = releases._fetch
+        releases._fetch = lambda: calls.append(1) or (_ for _ in ()).throw(
+            urllib.error.URLError("offline")
+        )
+        try:
+            _, first = releases.load(refresh=True)
+            _, second = releases.load(refresh=True)
+        finally:
+            releases._fetch = original
+        self.assertEqual(calls, [1])
+        self.assertEqual(first["error"], "No network connection")
+        self.assertEqual(second["error"], "No network connection")
+
+    def test_cache_write_failure_preserves_previous_release_data(self):
+        from unittest import mock
+        from astronoma import releases
+
+        self._seed_cache(fetched_at=1)
+        cached = releases._read_cache()
+        live = [releases.Release("v9.0.0", "v9", "", "new", "")]
+        with mock.patch.object(releases, "_fetch", return_value=live), \
+                mock.patch.object(releases, "_write_cache", side_effect=OSError("disk full")):
+            items, status = releases.load(refresh=True, min_interval=0)
+        self.assertEqual([item.tag for item in items], ["v4.0.1", "v4.0.0", "v3.8.4"])
+        self.assertIn("cache", status["error"])
+        self.assertEqual(releases._read_cache(), cached)
+
+    def test_fetch_checks_a_total_deadline_between_response_reads(self):
+        import contextlib
+        from unittest import mock
+        from astronoma import releases
+
+        class SlowResponse:
+            def read1(self, _amount):
+                return b" "
+
+        @contextlib.contextmanager
+        def fake_urlopen(*_args, **_kwargs):
+            yield SlowResponse()
+
+        with mock.patch.object(releases.urllib.request, "urlopen", fake_urlopen), \
+                mock.patch.object(releases.time, "monotonic",
+                                  side_effect=(0.0, 0.5, 1.1)):
+            with self.assertRaises(TimeoutError):
+                releases._fetch(timeout=1)
+
     def test_fetch_uses_the_canonical_omacom_release_feed(self):
         from astronoma import releases
         self.assertEqual(releases.REPO, "omacom/omarchy")

@@ -106,9 +106,17 @@ def _read_cache() -> dict:
         data = paths.read_json(paths.releases_cache(), MAX_CACHE_BYTES)
     except (OSError, ValueError):
         return {}
-    if not (isinstance(data, dict) and set(data) == {"schema", "fetchedAt", "releases"}
+    required = {"schema", "fetchedAt", "releases"}
+    allowed = required | {"attemptedAt", "lastError"}
+    if not (isinstance(data, dict) and required <= set(data) <= allowed
             and data.get("schema") == CACHE_SCHEMA
             and type(data.get("fetchedAt")) is int and data["fetchedAt"] >= 0):
+        return {}
+    if ("attemptedAt" in data
+            and (type(data["attemptedAt"]) is not int or data["attemptedAt"] < 0)):
+        return {}
+    if ("lastError" in data
+            and (not isinstance(data["lastError"], str) or len(data["lastError"]) > 200)):
         return {}
     items = data.get("releases")
     required = {"tag", "name", "publishedAt", "body", "url"}
@@ -124,13 +132,17 @@ def _read_cache() -> dict:
     return {**data, "releases": valid_items}
 
 
-def _write_cache(releases: list[Release]) -> None:
+def _write_cache(releases: list[Release], fetched_at: int | None = None,
+                 attempted_at: int | None = None, error: str = "") -> None:
+    now = int(time.time())
     payload = {
         "schema": CACHE_SCHEMA,
-        "fetchedAt": int(time.time()),
+        "fetchedAt": now if fetched_at is None else max(0, int(fetched_at)),
+        "attemptedAt": now if attempted_at is None else max(0, int(attempted_at)),
+        "lastError": str(error or "")[:200],
         "releases": [release.as_dict() for release in releases],
     }
-    paths.atomic_json_write(paths.releases_cache(), payload)
+    paths.atomic_json_write(paths.releases_cache(), payload, max_bytes=MAX_CACHE_BYTES)
 
 
 def reset_cache() -> None:
@@ -147,7 +159,20 @@ def _fetch(limit: int = 30, timeout: int = 15) -> list[Release]:
         },
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        raw = response.read(MAX_PAYLOAD_BYTES + 1)
+        chunks, total = [], 0
+        deadline = time.monotonic() + timeout
+        reader = getattr(response, "read1", None) or response.read
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("release request exceeded its total deadline")
+            chunk = reader(min(65536, MAX_PAYLOAD_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_PAYLOAD_BYTES:
+                raise ValueError("releases payload too large")
+        raw = b"".join(chunks)
     if len(raw) > MAX_PAYLOAD_BYTES:
         raise ValueError("releases payload too large")
     payload = json.loads(raw.decode("utf-8"))
@@ -180,27 +205,52 @@ def load(refresh: bool = False, ttl: int = DEFAULT_TTL,
         if isinstance(raw_cached, list) and isinstance(item, dict)
     ]
     fetched_at = int(cache.get("fetchedAt") or 0)
+    attempted_at = int(cache.get("attemptedAt") or fetched_at)
+    last_error = str(cache.get("lastError") or "")
     age = int(time.time()) - fetched_at if fetched_at else None
     expired = age is None or age > ttl
-    too_soon = age is not None and age < min_interval
+    attempt_age = int(time.time()) - attempted_at if attempted_at else None
+    too_soon = attempt_age is not None and attempt_age < min_interval
 
-    if (not refresh and not expired) or (refresh and too_soon and cached):
-        return cached, {"stale": False, "fetchedAt": fetched_at, "source": "cache"}
+    if not refresh or (too_soon and (cached or attempted_at)):
+        status = {"stale": expired, "fetchedAt": fetched_at, "source": "cache"}
+        if last_error:
+            status["error"] = last_error
+        return cached, status
 
     try:
         live = _fetch()
     except (urllib.error.URLError, OSError, ValueError, TimeoutError) as error:
+        message = _describe(error)
+        try:
+            _write_cache(cached, fetched_at=fetched_at,
+                         attempted_at=int(time.time()), error=message)
+        except (OSError, ValueError):
+            pass
         return cached, {
             "stale": True,
             "fetchedAt": fetched_at,
             "source": "cache",
-            "error": _describe(error),
+            "error": message,
         }
 
     if live:
-        _write_cache(live)
+        try:
+            _write_cache(live)
+        except (OSError, ValueError):
+            return cached, {
+                "stale": True, "fetchedAt": fetched_at, "source": "cache",
+                "error": "Could not update the release cache",
+            }
         return live, {"stale": False, "fetchedAt": int(time.time()), "source": "network"}
-    return cached, {"stale": True, "fetchedAt": fetched_at, "source": "cache"}
+    message = "GitHub returned no releases"
+    try:
+        _write_cache(cached, fetched_at=fetched_at,
+                     attempted_at=int(time.time()), error=message)
+    except (OSError, ValueError):
+        pass
+    return cached, {"stale": True, "fetchedAt": fetched_at,
+                    "source": "cache", "error": message}
 
 
 def _describe(error: Exception) -> str:
