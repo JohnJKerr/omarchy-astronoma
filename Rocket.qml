@@ -107,4 +107,5 @@ Item {
       NumberAnimation { duration: 90 }
     }
   }
+
 }

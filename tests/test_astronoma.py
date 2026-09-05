@@ -878,6 +878,41 @@ class SecurityBoundaryTests(TempEnv):
         self.assertNotIn("actions/checkout@v4", workflow)
         self.assertNotIn("actions/setup-python@v5", workflow)
 
+    def test_manifest_version_reaches_the_full_panel_footer(self):
+        root = Path(__file__).parents[1]
+        manifest_version = json.loads((root / "manifest.json").read_text())["version"]
+
+        from astronoma import __version__, releases, report
+        self.assertEqual(__version__, manifest_version)
+        self.cache.mkdir(parents=True, exist_ok=True)
+        (self.cache / "releases.json").write_text(json.dumps({
+            "schema": releases.CACHE_SCHEMA,
+            "fetchedAt": 9999999999,
+            "releases": [],
+        }))
+        self.assertEqual(report.build()["plugin"]["version"], manifest_version)
+
+        service = (root / "Service.qml").read_text()
+        flightlog = (root / "Flightlog.qml").read_text()
+        self.assertIn("readonly property string pluginVersion:", service)
+        self.assertIn('text: "Astronoma v" + service.pluginVersion', flightlog)
+        self.assertIn("id: footerColumn", flightlog)
+        self.assertLess(flightlog.index("id: footerHint"), flightlog.index("id: versionLabel"))
+        self.assertNotIn("version: service.pluginVersion", flightlog)
+
+    def test_manifest_version_reader_rejects_symlinks_and_oversized_files(self):
+        from astronoma import metadata
+        valid = self.state.parent / "valid-manifest.json"
+        valid.write_text(json.dumps({"schemaVersion": 1, "version": "2.3.4"}))
+        linked = self.state.parent / "linked-manifest.json"
+        linked.symlink_to(valid)
+        oversized = self.state.parent / "oversized-manifest.json"
+        oversized.write_bytes(b" " * (metadata.MAX_MANIFEST_BYTES + 1))
+
+        self.assertEqual(metadata._read_version(valid), "2.3.4")
+        self.assertEqual(metadata._read_version(linked), "")
+        self.assertEqual(metadata._read_version(oversized), "")
+
     def test_release_catalogue_navigation_and_alignment_are_wired(self):
         root = Path(__file__).parents[1]
         flightlog = (root / "Flightlog.qml").read_text()

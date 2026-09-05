@@ -38,6 +38,8 @@ Item {
   readonly property var agents: report && report.agents ? report.agents : []
   readonly property bool hasAgent: agents.length > 0
   readonly property var selectedAgent: report && report.selectedAgent ? report.selectedAgent : null
+  readonly property string pluginVersion: report && report.plugin
+    ? String(report.plugin.version || "") : ""
   readonly property bool agentSelectionMissing: report && report.agentSelectionMissing === true
   readonly property bool agentSummariesEnabled: report && report.agentSummariesEnabled === true
   readonly property string installed: report && report.omarchy ? (report.omarchy.installed || "") : ""

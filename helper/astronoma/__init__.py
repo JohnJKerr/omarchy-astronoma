@@ -5,4 +5,8 @@ persists history, talks to GitHub, or drives an agent lives here and is
 reached through the `astronoma` CLI as JSON on stdout.
 """
 
-__version__ = "1.0.0"
+from .metadata import version as _manifest_version
+
+
+# The manifest is the release source of truth for both the CLI and the UI.
+__version__ = _manifest_version()

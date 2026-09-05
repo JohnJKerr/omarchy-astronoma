@@ -5,7 +5,7 @@ this returns. That keeps the shell-side code thin and means the whole
 view can be inspected from a terminal with `astronoma report`.
 """
 
-from . import agent, history, releases as releases_mod, versions
+from . import __version__, agent, history, releases as releases_mod, versions
 
 RECENT_RELEASE_COUNT = 5
 
@@ -69,6 +69,7 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
 
     payload = {
         "schema": 1,
+        "plugin": {"version": __version__},
         "omarchy": {
             "installed": installed,
             "installedRaw": installed_raw,

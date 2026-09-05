@@ -509,18 +509,45 @@ Item {
         }
 
         // ---------------------------------------------------- footer
-        Text {
+        Item {
             id: footer
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            text: root.showingReleaseCatalogue
-              ? "↑↓ scroll · pgup/pgdn or space scroll page · home/end jump · r refresh · esc flight log"
-              : "↑↓ scroll · j/k select · pgup/pgdn or space scroll page · home/end jump · p packages · r refresh · esc close"
-            color: root.faint
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            horizontalAlignment: Text.AlignHCenter
+            implicitHeight: footerColumn.implicitHeight
+            height: implicitHeight
+
+            Column {
+              id: footerColumn
+              width: parent.width
+              spacing: Style.space(2)
+
+              Text {
+                id: footerHint
+                width: parent.width
+                text: root.showingReleaseCatalogue
+                  ? "↑↓ scroll · pgup/pgdn or space scroll page · home/end jump · r refresh · esc flight log"
+                  : "↑↓ scroll · j/k select · pgup/pgdn or space scroll page · home/end jump · p packages · r refresh · esc close"
+                textFormat: Text.PlainText
+                color: root.faint
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+              }
+
+              Text {
+                id: versionLabel
+                visible: service.pluginVersion !== ""
+                width: parent.width
+                text: "Astronoma v" + service.pluginVersion
+                textFormat: Text.PlainText
+                color: root.faint
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                horizontalAlignment: Text.AlignHCenter
+              }
+            }
         }
 
         // ------------------------------------------- list + detail
