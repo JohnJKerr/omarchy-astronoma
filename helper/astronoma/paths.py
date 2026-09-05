@@ -74,7 +74,13 @@ def _open_directory(directory: Path, create: bool = False, private: bool = False
             except FileNotFoundError:
                 if not create:
                     raise
-                os.mkdir(name, 0o700 if private else 0o755, dir_fd=descriptor)
+                try:
+                    os.mkdir(name, 0o700 if private else 0o755, dir_fd=descriptor)
+                except FileExistsError:
+                    # Another Astronoma process may have created it after the
+                    # failed open. The descriptor open and checks below still
+                    # establish what won the race.
+                    pass
                 child = os.open(name, _DIR_FLAGS, dir_fd=descriptor)
             info = os.fstat(child)
             unsafe_writable = info.st_mode & 0o022 and not (info.st_mode & stat.S_ISVTX)
@@ -163,12 +169,20 @@ def json_within_limits(value, max_items: int, max_string: int, max_depth: int = 
     return visit(value, 0)
 
 
+def _bounded_names(descriptor: int, max_entries: int) -> list[str]:
+    names = []
+    with os.scandir(descriptor) as entries:
+        for entry in entries:
+            names.append(entry.name)
+            if len(names) > max_entries:
+                raise ValueError(f"directory exceeds {max_entries} entry limit")
+    return names
+
+
 def list_regular(directory: Path, max_entries: int) -> list[str]:
     descriptor = _open_directory(directory, private=True)
     try:
-        names = os.listdir(descriptor)
-        if len(names) > max_entries:
-            raise ValueError(f"directory exceeds {max_entries} entry limit")
+        names = _bounded_names(descriptor, max_entries)
         result = []
         for name in names:
             try:
@@ -182,18 +196,21 @@ def list_regular(directory: Path, max_entries: int) -> list[str]:
         os.close(descriptor)
 
 
-def harden_private_tree(directory: Path) -> None:
+def harden_private_tree(directory: Path, max_entries: int) -> None:
     descriptor = _open_directory(directory, create=True, private=True)
     try:
-        for name in os.listdir(descriptor):
+        for name in _bounded_names(descriptor, max_entries):
+            child = -1
             try:
                 child = os.open(name, _FILE_FLAGS, dir_fd=descriptor)
                 info = os.fstat(child)
                 if stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid():
                     os.fchmod(child, 0o600)
-                os.close(child)
             except OSError:
                 continue
+            finally:
+                if child >= 0:
+                    os.close(child)
     finally:
         os.close(descriptor)
 
@@ -271,9 +288,7 @@ def clear_private_directory(directory: Path, max_entries: int) -> int:
     except FileNotFoundError:
         return 0
     try:
-        names = os.listdir(descriptor)
-        if len(names) > max_entries:
-            raise ValueError(f"directory exceeds {max_entries} entry limit")
+        names = _bounded_names(descriptor, max_entries)
         for name in names:
             info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():

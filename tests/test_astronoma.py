@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 import subprocess
 import re
+import stat
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -798,6 +799,40 @@ class ReportTests(TempEnv):
 
 
 class SecurityBoundaryTests(TempEnv):
+    def test_private_directory_enumeration_stops_at_its_entry_limit(self):
+        from astronoma import paths
+
+        self.state.mkdir(mode=0o700)
+        for name in ("one", "two", "three"):
+            (self.state / name).write_text(name)
+            (self.state / name).chmod(0o600)
+        with self.assertRaises(ValueError):
+            paths.list_regular(self.state, 2)
+        with self.assertRaises(ValueError):
+            paths.harden_private_tree(self.state, 2)
+        with self.assertRaises(ValueError):
+            paths.clear_private_directory(self.state, 2)
+        self.assertEqual(len(list(self.state.iterdir())), 3)
+
+    def test_tree_hardening_closes_leaf_after_permission_failure(self):
+        from unittest import mock
+        from astronoma import paths
+
+        self.state.mkdir(mode=0o700)
+        leaf = self.state / "leaf"
+        leaf.write_text("private")
+        before = len(os.listdir("/proc/self/fd"))
+        real_fchmod = os.fchmod
+
+        def fail_leaf(descriptor, mode):
+            if stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise OSError("denied")
+            return real_fchmod(descriptor, mode)
+
+        with mock.patch.object(paths.os, "fchmod", side_effect=fail_leaf):
+            paths.harden_private_tree(self.state, 8)
+        self.assertEqual(len(os.listdir("/proc/self/fd")), before)
+
     def test_state_root_symlink_is_rejected(self):
         from astronoma import history
         target = self.state.parent / "attacker-state"

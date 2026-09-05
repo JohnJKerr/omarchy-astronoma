@@ -117,7 +117,7 @@ def _log_matches(session: pacmanlog.Session, log: updatelog.UpdateLog) -> bool:
 
 @contextmanager
 def _capture_lock():
-    paths.harden_private_tree(paths.state_dir())
+    paths.harden_private_tree(paths.state_dir(), history.MAX_RECORDS + 8)
     with paths.private_lock(paths.state_dir() / ".capture.lock"):
         yield
 

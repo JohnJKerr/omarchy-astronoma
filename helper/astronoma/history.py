@@ -95,7 +95,7 @@ def reset_captured() -> int:
         # Early versions did not make every state leaf private. Repair
         # user-owned regular files before the trusted listing so upgrades can
         # reset them too; symlinks and foreign-owned entries remain excluded.
-        paths.harden_private_tree(paths.state_dir())
+        paths.harden_private_tree(paths.state_dir(), MAX_RECORDS + 8)
         names = paths.list_regular(paths.state_dir(), MAX_RECORDS + 8)
     except FileNotFoundError:
         return 0
