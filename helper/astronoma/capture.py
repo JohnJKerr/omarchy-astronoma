@@ -185,9 +185,17 @@ def _run_locked(force: bool = False) -> dict:
         identifier = history.record_id(session.started)
 
         if identifier in existing and not force:
-            # Re-record only when this run brings a transcript we have not
-            # already folded into the stored record.
-            if not attached or (attached.digest and attached.digest in known):
+            # An update may still be running at first capture. Re-record
+            # when package activity grows or new transcript evidence arrives.
+            previous = existing_records[identifier]
+            packages = {
+                "upgraded": [c.as_dict() for c in session.upgraded],
+                "installed": [c.as_dict() for c in session.installed],
+                "removed": [c.as_dict() for c in session.removed],
+            }
+            packages_unchanged = (previous.get("packages") == packages
+                                  and previous.get("finishedAt") == session.finished.isoformat())
+            if packages_unchanged and (not attached or (attached.digest and attached.digest in known)):
                 skipped.append(identifier)
                 continue
 
