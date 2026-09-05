@@ -8,13 +8,13 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "helper"))
 
-from astronoma.agent import _run_bounded  # noqa: E402
+from astronoma.process import run_bounded  # noqa: E402
 
 
 def main() -> int:
     timeout = 190 if "summarise" in sys.argv[1:] else 30
     try:
-        code, stdout, stderr = _run_bounded(
+        code, stdout, stderr = run_bounded(
             [os.path.join(ROOT, "bin", "astronoma"), *sys.argv[1:]], os.getcwd(),
             timeout=timeout, stdout_limit=16 * 1024 * 1024,
             stderr_limit=64 * 1024,

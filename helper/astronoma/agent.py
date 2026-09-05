@@ -4,16 +4,12 @@ Astronoma never needs an API key: it looks for an agent the user has
 already installed and logged into, and shells out to it in one-shot mode.
 Only CLIs with a defensible non-tooling mode belong in `AGENTS`.
 
-The whole feature is optional by construction — nothing else in Astronoma
-reads this module, so a machine with no agent loses the summary button and
-keeps every other view.
+The feature is optional: discovering no supported agent leaves every other
+view available.
 """
 
 import json
-import os
 import re
-import selectors
-import signal
 import shutil
 import subprocess
 import tempfile
@@ -21,11 +17,10 @@ import time
 from dataclasses import dataclass
 
 from . import history, paths
+from .process import run_bounded
 
 TIMEOUT = 180
 MAX_SUMMARY_BYTES = 256 * 1024
-MAX_AGENT_STDOUT = 256 * 1024
-MAX_AGENT_STDERR = 64 * 1024
 MAX_CACHED_SUMMARIES = 4096
 
 
@@ -330,74 +325,6 @@ def save_summary(identifier: str, payload: dict) -> None:
     paths.atomic_json_write(target, payload, private=True)
 
 
-def _stop_group(process: subprocess.Popen) -> None:
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        process.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
-
-
-def _run_bounded(argv: list[str], workdir: str, timeout: float = TIMEOUT,
-                 stdout_limit: int = MAX_AGENT_STDOUT,
-                 stderr_limit: int = MAX_AGENT_STDERR) -> tuple[int, bytes, bytes]:
-    """Drain bounded output while the producer runs, with a process-group deadline."""
-    # QML's Process can leave stdin as an open pipe. Codex treats piped stdin
-    # as additional prompt input even when a positional prompt was supplied,
-    # so inheriting that descriptor makes it wait forever for EOF. These are
-    # deliberately non-interactive jobs: give every child an immediate EOF.
-    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               cwd=workdir, start_new_session=True)
-    def cancelled(signum, _frame):
-        raise SystemExit(128 + signum)
-
-    previous_handlers = {}
-    for signum in (signal.SIGTERM, signal.SIGINT):
-        previous_handlers[signum] = signal.getsignal(signum)
-        signal.signal(signum, cancelled)
-    selector = selectors.DefaultSelector()
-    buffers = {process.stdout: bytearray(), process.stderr: bytearray()}
-    limits = {process.stdout: stdout_limit, process.stderr: stderr_limit}
-    selector.register(process.stdout, selectors.EVENT_READ)
-    selector.register(process.stderr, selectors.EVENT_READ)
-    deadline = time.monotonic() + timeout
-    try:
-        while selector.get_map():
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise subprocess.TimeoutExpired(argv, timeout)
-            for key, _ in selector.select(min(remaining, 0.25)):
-                stream = key.fileobj
-                chunk = os.read(stream.fileno(), 65536)
-                if not chunk:
-                    selector.unregister(stream)
-                    continue
-                buffers[stream].extend(chunk)
-                if len(buffers[stream]) > limits[stream]:
-                    raise ValueError("agent output exceeded the byte limit")
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise subprocess.TimeoutExpired(argv, timeout)
-        return (process.wait(timeout=remaining), bytes(buffers[process.stdout]),
-                bytes(buffers[process.stderr]))
-    except BaseException:
-        _stop_group(process)
-        raise
-    finally:
-        for signum, handler in previous_handlers.items():
-            signal.signal(signum, handler)
-        selector.close()
-        process.stdout.close()
-        process.stderr.close()
-
 
 def summarise(identifier: str, releases: list, key: str | None = None,
               refresh: bool = False) -> dict:
@@ -431,7 +358,7 @@ def summarise(identifier: str, releases: list, key: str | None = None,
         # Codex ignores user config and rules and disables its tool features
         # above, with strict validation making unknown controls fail closed.
         with tempfile.TemporaryDirectory(prefix="astronoma-summary-") as workdir:
-            returncode, stdout, stderr = _run_bounded(argv, workdir)
+            returncode, stdout, stderr = run_bounded(argv, workdir, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": f"{chosen.name} timed out after {TIMEOUT}s"}
     except ValueError:

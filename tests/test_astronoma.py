@@ -832,32 +832,69 @@ class SecurityBoundaryTests(TempEnv):
         self.assertFalse(updatelog.load(fifo).present)
 
     def test_agent_output_is_stopped_at_the_production_limit(self):
-        from astronoma import agent
+        from astronoma import process
         with tempfile.TemporaryDirectory() as workdir:
             with self.assertRaises(ValueError):
-                agent._run_bounded(
+                process.run_bounded(
                     [sys.executable, "-c", "import sys; sys.stdout.write('x' * 300000)"],
                     workdir,
                 )
 
     def test_agent_deadline_survives_closed_output_pipes(self):
-        from astronoma import agent
+        from astronoma import process
         with tempfile.TemporaryDirectory() as workdir:
             with self.assertRaises(subprocess.TimeoutExpired):
-                agent._run_bounded(
+                process.run_bounded(
                     [sys.executable, "-c", "import os,time; os.close(1); os.close(2); time.sleep(5)"],
                     workdir, timeout=0.1,
                 )
 
+    def test_process_cleanup_kills_descendant_after_leader_exits(self):
+        from astronoma import process
+        import signal
+        import time
+
+        with tempfile.TemporaryDirectory() as workdir:
+            pidfile = Path(workdir) / "child.pid"
+            child = (
+                "import os,signal,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "open('child.pid', 'w').write(str(os.getpid())); time.sleep(30)"
+            )
+            parent = (
+                "import subprocess,sys,time,pathlib; "
+                f"subprocess.Popen([sys.executable, '-c', {child!r}]); "
+                "p=pathlib.Path('child.pid'); "
+                "exec('while not p.exists(): time.sleep(0.01)'); time.sleep(30)"
+            )
+            try:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    process.run_bounded([sys.executable, "-c", parent], workdir, timeout=0.3)
+                pid = int(pidfile.read_text())
+                deadline = time.monotonic() + 1
+                while time.monotonic() < deadline:
+                    status = Path(f"/proc/{pid}/stat")
+                    if not status.exists() or status.read_text().split()[2] == "Z":
+                        break
+                    time.sleep(0.01)
+                else:
+                    self.fail("descendant survived process-group cleanup")
+            finally:
+                if pidfile.exists():
+                    try:
+                        os.kill(int(pidfile.read_text()), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
     def test_agent_child_cannot_wait_on_the_shells_open_stdin(self):
-        from astronoma import agent
+        from astronoma import process
         read_fd, write_fd = os.pipe()
         saved_stdin = os.dup(0)
         os.dup2(read_fd, 0)
         os.close(read_fd)
         try:
             with tempfile.TemporaryDirectory() as workdir:
-                code, stdout, _ = agent._run_bounded(
+                code, stdout, _ = process.run_bounded(
                     [sys.executable, "-c",
                      "import sys; sys.stdin.read(); print('finished')"],
                     workdir, timeout=0.2,
