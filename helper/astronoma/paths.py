@@ -417,3 +417,68 @@ def clear_private_directory(directory: Path, max_entries: int) -> int:
         return len(names)
     finally:
         os.close(descriptor)
+
+
+def remove_private_tree(directory: Path, max_entries: int = 20_000,
+                        max_depth: int = 16) -> int:
+    """Delete one bounded user-owned tree without following pathnames.
+
+    The complete tree is validated before the first unlink, so a special or
+    foreign-owned entry leaves the existing installation intact. Symlinks are
+    safe leaf entries: they are unlinked through their verified parent and are
+    never followed.
+    """
+    try:
+        parent = _open_directory(directory.parent)
+    except FileNotFoundError:
+        return 0
+    total = 0
+
+    def inspect(parent_fd: int, name: str, depth: int) -> None:
+        nonlocal total
+        if depth > max_depth:
+            raise ValueError(f"tree exceeds {max_depth} level depth limit")
+        info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        total += 1
+        if total > max_entries:
+            raise ValueError(f"tree exceeds {max_entries} entry limit")
+        if info.st_uid != os.geteuid():
+            raise PermissionError(f"refusing foreign-owned entry: {directory / name}")
+        if stat.S_ISDIR(info.st_mode):
+            child = os.open(name, _DIR_FLAGS, dir_fd=parent_fd)
+            try:
+                for child_name in _bounded_names(child, max_entries - total):
+                    inspect(child, child_name, depth + 1)
+            finally:
+                os.close(child)
+        elif not (stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)):
+            raise PermissionError(f"refusing special entry: {directory / name}")
+
+    def remove(parent_fd: int, name: str) -> None:
+        info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if info.st_uid != os.geteuid():
+            raise PermissionError(f"refusing changed entry: {directory / name}")
+        if stat.S_ISDIR(info.st_mode):
+            child = os.open(name, _DIR_FLAGS, dir_fd=parent_fd)
+            try:
+                for child_name in _bounded_names(child, max_entries):
+                    remove(child, child_name)
+                os.fsync(child)
+            finally:
+                os.close(child)
+            os.rmdir(name, dir_fd=parent_fd)
+        elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            os.unlink(name, dir_fd=parent_fd)
+        else:
+            raise PermissionError(f"refusing changed special entry: {directory / name}")
+
+    try:
+        try:
+            inspect(parent, directory.name, 0)
+        except FileNotFoundError:
+            return 0
+        remove(parent, directory.name)
+        os.fsync(parent)
+        return total
+    finally:
+        os.close(parent)

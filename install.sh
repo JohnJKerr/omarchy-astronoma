@@ -61,6 +61,12 @@ validate_target() {
 
 validate_target
 
+remove_tree() {
+  PYTHONPATH="$SOURCE_DIR/helper" python3 -c \
+    'import sys; from pathlib import Path; from astronoma import paths; paths.remove_private_tree(Path(sys.argv[1]))' \
+    "$1"
+}
+
 # Running the installed copy of this script would otherwise remove its own
 # source tree before the copy begins, leaving a broken or empty plugin behind.
 if [[ $(realpath -m -- "$SOURCE_DIR") == $(realpath -m -- "$TARGET_DIR") ]]; then
@@ -81,7 +87,7 @@ PYTHONPATH="$SOURCE_DIR/helper" python3 -c \
 STAGING_DIR="$(mktemp -d "$TARGET_PARENT/.astronoma-install.XXXXXXXX")"
 BACKUP_DIR=""
 cleanup_install() {
-  [[ -z $STAGING_DIR || ! -e $STAGING_DIR ]] || rm -rf -- "$STAGING_DIR"
+  [[ -z $STAGING_DIR || ! -e $STAGING_DIR ]] || remove_tree "$STAGING_DIR"
   if [[ -n $BACKUP_DIR && -e $BACKUP_DIR && ! -e $TARGET_DIR ]]; then
     mv -- "$BACKUP_DIR" "$TARGET_DIR"
   fi
@@ -128,7 +134,7 @@ fi
 mv -- "$STAGING_DIR" "$TARGET_DIR"
 STAGING_DIR=""
 if [[ -n $BACKUP_DIR ]]; then
-  rm -rf -- "$BACKUP_DIR"
+  remove_tree "$BACKUP_DIR"
   BACKUP_DIR=""
 fi
 trap - EXIT

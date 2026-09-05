@@ -1206,6 +1206,32 @@ class SecurityBoundaryTests(TempEnv):
             paths.clear_private_directory(self.state, 2)
         self.assertEqual(len(list(self.state.iterdir())), 3)
 
+    def test_tree_removal_unlinks_symlinks_without_touching_their_targets(self):
+        from astronoma import paths
+        tree = Path(self.tmp.name) / "private-tree"
+        outside = Path(self.tmp.name) / "outside"
+        tree.mkdir()
+        outside.mkdir()
+        sentinel = outside / "sentinel"
+        sentinel.write_text("safe")
+        (tree / "link").symlink_to(outside, target_is_directory=True)
+        (tree / "nested").mkdir()
+        (tree / "nested" / "file").write_text("data")
+        paths.remove_private_tree(tree)
+        self.assertFalse(tree.exists())
+        self.assertEqual(sentinel.read_text(), "safe")
+
+    def test_tree_removal_validates_before_deleting_anything(self):
+        from astronoma import paths
+        tree = Path(self.tmp.name) / "private-tree"
+        tree.mkdir()
+        retained = tree / "retained"
+        retained.write_text("safe")
+        os.mkfifo(tree / "special")
+        with self.assertRaises(PermissionError):
+            paths.remove_private_tree(tree)
+        self.assertEqual(retained.read_text(), "safe")
+
     def test_tree_hardening_closes_leaf_after_permission_failure(self):
         from unittest import mock
         from astronoma import paths
@@ -2087,6 +2113,26 @@ class InstallationTests(unittest.TestCase):
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("unsafe state purge target", completed.stderr)
+            self.assertEqual(sentinel.read_text(), "safe")
+
+    def test_uninstall_unlinks_nested_symlink_without_following_it(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            env = self._env(temporary)
+            installed = (Path(temporary) / "config" / "omarchy" / "plugins"
+                         / "io.github.johnjkerr.astronoma")
+            installed.mkdir(parents=True)
+            outside = Path(temporary) / "outside"
+            outside.mkdir()
+            sentinel = outside / "sentinel"
+            sentinel.write_text("safe")
+            (installed / "nested-link").symlink_to(outside, target_is_directory=True)
+
+            subprocess.run(
+                [root / "uninstall.sh"], cwd=root, env=env,
+                check=True, capture_output=True, text=True,
+            )
+            self.assertFalse(installed.exists())
             self.assertEqual(sentinel.read_text(), "safe")
 
 

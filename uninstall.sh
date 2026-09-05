@@ -58,6 +58,12 @@ validate_purge_target() {
   fi
 }
 
+remove_tree() {
+  PYTHONPATH="$SOURCE_DIR/helper" python3 -c \
+    'import sys; from pathlib import Path; from astronoma import paths; paths.remove_private_tree(Path(sys.argv[1]))' \
+    "$1"
+}
+
 # `omarchy plugin add` installs by cloning, so this script usually lives
 # inside the very directory it is about to delete. Everything runs from a
 # function: bash parses a function whole before executing any of it, so the
@@ -96,11 +102,12 @@ main() {
   if command -v omarchy >/dev/null; then
     omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
   fi
-  rm -rf -- "$TARGET_DIR"
+  remove_tree "$TARGET_DIR"
   echo "Removed $TARGET_DIR"
 
   if (( PURGE )); then
-    rm -rf -- "$STATE_DIR" "$CACHE_DIR"
+    remove_tree "$STATE_DIR"
+    remove_tree "$CACHE_DIR"
     echo "Removed captured history ($STATE_DIR) and the release cache ($CACHE_DIR)"
   else
     echo "Kept captured history in $STATE_DIR — re-run with --purge to delete it."
