@@ -167,6 +167,30 @@ def read_trusted_leaf(target: Path, max_bytes: int,
         os.close(descriptor)
 
 
+def read_user_config(target: Path, max_bytes: int) -> tuple[bytes, int]:
+    """Read a user-owned config leaf below descriptor-verified ancestors."""
+    parent = _open_directory(target.parent)
+    try:
+        descriptor = _open_regular(parent, target.name, max_bytes, private=False)
+        try:
+            info = os.fstat(descriptor)
+            if info.st_mode & 0o022:
+                raise PermissionError(f"config file is writable by other users: {target}")
+            chunks, total = [], 0
+            while True:
+                chunk = os.read(descriptor, min(65536, max_bytes + 1 - total))
+                if not chunk:
+                    return b"".join(chunks), stat.S_IMODE(info.st_mode)
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError(f"file exceeds {max_bytes} byte limit")
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent)
+
+
 def trusted_leaf_identity(target: Path, allowed_owners: tuple[int, ...]) -> list[int] | None:
     """Describe a trusted regular leaf without following it; missing is None."""
     try:
@@ -336,13 +360,15 @@ def private_lock(target: Path):
         os.close(parent)
 
 
-def atomic_bytes_write(target: Path, encoded: bytes, private: bool = True) -> None:
+def atomic_bytes_write(target: Path, encoded: bytes, private: bool = True,
+                       mode: int | None = None) -> None:
     parent = _open_directory(target.parent, create=True, private=private)
     temporary = f".{target.name}.{secrets.token_hex(8)}.tmp"
     descriptor = -1
     try:
+        create_mode = (0o600 if private else 0o644) if mode is None else mode & 0o777
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
-                             0o600 if private else 0o644, dir_fd=parent)
+                             create_mode, dir_fd=parent)
         written = 0
         while written < len(encoded):
             count = os.write(descriptor, encoded[written:])

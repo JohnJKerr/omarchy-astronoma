@@ -1703,6 +1703,46 @@ class MenuEntryTests(unittest.TestCase):
                 self.assertIn(retained, result)
                 self.assertNotIn('"update.astronoma"', result)
 
+    def test_menu_edit_rejects_symlink_ancestor_and_oversized_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            outside = base / "outside"
+            outside.mkdir()
+            sentinel = outside / "omarchy-menu.jsonc"
+            sentinel.write_text('{"outside": true}\n')
+            config_root = base / "config"
+            config_root.mkdir()
+            (config_root / "omarchy").symlink_to(outside, target_is_directory=True)
+            env = {**os.environ, "XDG_CONFIG_HOME": str(config_root)}
+            script = str(Path(__file__).resolve().parents[1] / "bin" / "astronoma-menu-entry")
+            completed = subprocess.run(
+                [script, "add"], env=env, check=True, capture_output=True, text=True
+            )
+            self.assertIn("left it alone", completed.stdout)
+            self.assertEqual(sentinel.read_text(), '{"outside": true}\n')
+
+            (config_root / "omarchy").unlink()
+            config = config_root / "omarchy" / "extensions" / "omarchy-menu.jsonc"
+            config.parent.mkdir(parents=True)
+            config.write_bytes(b" " * (2 * 1024 * 1024 + 1))
+            completed = subprocess.run(
+                [script, "add"], env=env, check=True, capture_output=True, text=True
+            )
+            self.assertIn("left it alone", completed.stdout)
+            self.assertEqual(config.stat().st_size, 2 * 1024 * 1024 + 1)
+
+    def test_menu_edit_is_atomic_and_preserves_existing_mode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / "omarchy" / "extensions" / "omarchy-menu.jsonc"
+            config.parent.mkdir(parents=True)
+            config.write_text('{"existing": true}\n')
+            config.chmod(0o600)
+            env = {**os.environ, "XDG_CONFIG_HOME": temporary}
+            script = str(Path(__file__).resolve().parents[1] / "bin" / "astronoma-menu-entry")
+            subprocess.run([script, "add"], env=env, check=True, capture_output=True)
+            self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
+            self.assertEqual(list(config.parent.glob(".*.tmp")), [])
+
 
 class InstallationTests(unittest.TestCase):
     """Exercises install.sh and uninstall.sh against a throwaway config tree.

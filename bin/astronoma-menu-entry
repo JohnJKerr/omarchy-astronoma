@@ -16,7 +16,13 @@ import json
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "helper"))
+
+from astronoma import paths  # noqa: E402
+
 KEY = "update.astronoma"
+MAX_MENU_BYTES = 2 * 1024 * 1024
 # The rocket, written as an escape rather than a literal: this row travels
 # through shells and editors on its way into a JSONC file, and a bare
 # multi-byte glyph does not reliably survive that trip.
@@ -207,11 +213,29 @@ def target() -> Path:
     return Path(base) / "omarchy" / "extensions" / "omarchy-menu.jsonc"
 
 
-def add(path: Path) -> str:
-    text = path.read_text() if path.exists() else "{\n}\n"
+def _load(path: Path) -> tuple[str, int]:
     try:
+        raw, mode = paths.read_user_config(path, MAX_MENU_BYTES)
+    except FileNotFoundError:
+        return "{\n}\n", 0o644
+    try:
+        return raw.decode("utf-8"), mode
+    except UnicodeError as error:
+        raise MenuSyntaxError("menu file is not UTF-8") from error
+
+
+def _store(path: Path, text: str, mode: int) -> None:
+    encoded = text.encode("utf-8")
+    if len(encoded) > MAX_MENU_BYTES:
+        raise MenuSyntaxError("updated menu exceeds the byte limit")
+    paths.atomic_bytes_write(path, encoded, private=False, mode=mode)
+
+
+def add(path: Path) -> str:
+    try:
+        text, mode = _load(path)
         properties, closing = _properties(text)
-    except MenuSyntaxError:
+    except (OSError, ValueError, MenuSyntaxError):
         return "could not parse the menu file; left it alone"
     existing = next((item for item in properties if item["key"] == KEY), None)
     if existing:
@@ -220,7 +244,10 @@ def add(path: Path) -> str:
         updated = _replace_span(text, existing, ROW)
         if updated == text:
             return "already present"
-        path.write_text(updated)
+        try:
+            _store(path, updated, mode)
+        except (OSError, ValueError, MenuSyntaxError):
+            return "could not update the menu file; left it alone"
         return "updated"
     # Splice before the final closing brace so surrounding comments survive.
     prefix = text[:closing]
@@ -228,15 +255,20 @@ def add(path: Path) -> str:
         comma_at = properties[-1]["value_end"]
         prefix = prefix[:comma_at] + "," + prefix[comma_at:]
     updated = prefix + ROW + text[closing:]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(updated)
+    try:
+        _store(path, updated, mode)
+    except (OSError, ValueError, MenuSyntaxError):
+        return "could not update the menu file; left it alone"
     return "added"
 
 
 def remove(path: Path) -> str:
-    if not path.exists():
+    try:
+        text, mode = _load(path)
+    except FileNotFoundError:
         return "nothing to remove"
-    text = path.read_text()
+    except (OSError, ValueError, MenuSyntaxError):
+        return "could not parse the menu file; left it alone"
     try:
         properties, _closing = _properties(text)
     except MenuSyntaxError:
@@ -252,7 +284,10 @@ def remove(path: Path) -> str:
     if was_last and remaining and remaining[-1]["comma_end"] is not None:
         comma = remaining[-1]["comma_end"] - 1
         updated = updated[:comma] + updated[comma + 1:]
-    path.write_text(updated)
+    try:
+        _store(path, updated, mode)
+    except (OSError, ValueError, MenuSyntaxError):
+        return "could not update the menu file; left it alone"
     return "removed"
 
 
