@@ -72,6 +72,8 @@ class UpdateLog:
     # When the transcript was last written — effectively when the update
     # finished. This is what dates a run that carries no timestamps.
     modified: object | None = None
+    source_signature: list[int] | None = None
+    error: str | None = None
 
 
 def _classify(line: str) -> str | None:
@@ -164,13 +166,16 @@ def load(path=None) -> UpdateLog:
                 raise ValueError("update log is too large")
         raw = b"".join(chunks)
         modified = datetime.fromtimestamp(info.st_mtime).astimezone()
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return UpdateLog(present=False)
+    except (OSError, ValueError) as error:
+        return UpdateLog(present=False, error=f"Update transcript was not read safely: {error}")
     finally:
         if descriptor >= 0:
             os.close(descriptor)
     result = parse(raw.decode("utf-8", errors="replace"))
     result.modified = modified
+    result.source_signature = [info.st_dev, info.st_ino, len(raw), info.st_mtime_ns]
     # Identifies this exact transcript so the same run is never captured
     # twice, however often the plugin looks at it.
     result.digest = hashlib.sha256(raw).hexdigest()

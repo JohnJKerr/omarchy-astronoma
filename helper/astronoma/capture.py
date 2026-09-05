@@ -11,6 +11,7 @@ alone, and marked `partial`. That backfill is what lets a machine show a
 useful history the first time Astronoma ever runs.
 """
 
+import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -129,12 +130,17 @@ def _capture_lock():
 
 def _source_signature() -> dict:
     signature = {}
-    for name, source in (("pacman", paths.pacman_log()), ("update", paths.update_log())):
+    sources = (
+        ("pacman", paths.pacman_log(), (0, os.geteuid())),
+        ("update", paths.update_log(), (os.geteuid(),)),
+    )
+    for name, source, owners in sources:
         try:
-            stat = source.stat()
-            signature[name] = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
+            signature[name] = paths.trusted_leaf_identity(source, owners)
         except OSError:
-            signature[name] = None
+            # Distinct from a missing leaf, so an unsafe replacement cannot
+            # hit the unchanged fast path and hide its rejection.
+            signature[name] = "unsafe"
     return signature
 
 
@@ -148,25 +154,30 @@ def run_if_changed() -> dict:
         previous = None
     if previous == signature and history.any_records():
         return {"captured": [], "skipped": [], "unchanged": True}
-    result = run()
+    result = run(include_source_signatures=True)
+    consumed_signature = result.pop("sourceSignatures", None)
     if not result.get("error") and not result.get("warning"):
-        paths.atomic_json_write(stamp, signature, private=True)
+        paths.atomic_json_write(stamp, consumed_signature, private=True)
     return result
 
 
-def run(force: bool = False) -> dict:
+def run(force: bool = False, include_source_signatures: bool = False) -> dict:
     """Capture every update the machine can still evidence.
 
     Returns a report of what was written, so the caller can tell the
     difference between "nothing to do" and "nothing readable".
     """
     with _capture_lock():
-        return _run_locked(force)
+        result = _run_locked(force)
+    if not include_source_signatures:
+        result.pop("sourceSignatures", None)
+    return result
 
 
 def _run_locked(force: bool = False) -> dict:
     try:
-        sessions = [s for s in pacmanlog.sessions() if _is_update(s)]
+        all_sessions, pacman_signature = pacmanlog.sessions_with_identity()
+        sessions = [s for s in all_sessions if _is_update(s)]
     except pacmanlog.PacmanLogError as error:
         return {
             "captured": [], "skipped": [], "sessions": 0,
@@ -174,7 +185,7 @@ def _run_locked(force: bool = False) -> dict:
             "error": str(error),
         }
     log = updatelog.load()
-    migration_warning = ""
+    migration_warning = str(log.error or "")
     try:
         migration_markers = _migration_markers()
     except (OSError, ValueError) as error:
@@ -235,6 +246,10 @@ def _run_locked(force: bool = False) -> dict:
         "sessions": len(sessions),
         "updateLogPresent": log.present,
         "updateLogAttached": owner is not None,
+        "sourceSignatures": {
+            "pacman": pacman_signature,
+            "update": log.source_signature,
+        },
     }
     if migration_warning:
         result["warning"] = migration_warning[:200]

@@ -290,6 +290,19 @@ class UpdateLogTests(unittest.TestCase):
 
 
 class CaptureTests(TempEnv):
+    def test_capture_stamp_uses_the_consumed_descriptor_identity(self):
+        from unittest import mock
+        from astronoma import capture
+
+        consumed = [1, 2, 3, 4]
+        with mock.patch.object(capture, "_source_signature",
+                               return_value={"pacman": "hint", "update": None}), \
+                mock.patch.object(capture.pacmanlog, "sessions_with_identity",
+                                  return_value=([], consumed)):
+            capture.run_if_changed()
+        stamp = json.loads((self.state / ".capture-sources.json").read_text())
+        self.assertEqual(stamp, {"pacman": consumed, "update": None})
+
     def test_migration_markers_are_snapshotted_once_per_capture(self):
         from unittest import mock
         from astronoma import capture

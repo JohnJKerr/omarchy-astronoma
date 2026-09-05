@@ -167,6 +167,21 @@ def read_trusted_leaf(target: Path, max_bytes: int,
         os.close(descriptor)
 
 
+def trusted_leaf_identity(target: Path, allowed_owners: tuple[int, ...]) -> list[int] | None:
+    """Describe a trusted regular leaf without following it; missing is None."""
+    try:
+        descriptor = os.open(target, _FILE_FLAGS)
+    except FileNotFoundError:
+        return None
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid not in allowed_owners:
+            raise PermissionError(f"untrusted regular file: {target}")
+        return [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns]
+    finally:
+        os.close(descriptor)
+
+
 def read_json(target: Path, max_bytes: int, private: bool = True):
     return json.loads(read_bytes(target, max_bytes, private).decode("utf-8"))
 

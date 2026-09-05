@@ -39,13 +39,13 @@ class PacmanLogError(ValueError):
     """The package log exists but cannot safely be consumed."""
 
 
-def _read_bounded(log_path) -> str | None:
+def _read_bounded(log_path) -> tuple[str | None, list[int] | None]:
     try:
         descriptor = os.open(
             log_path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
         )
     except FileNotFoundError:
-        return None
+        return None, None
     except OSError as error:
         raise PacmanLogError("Package history could not be opened safely") from error
     try:
@@ -64,11 +64,12 @@ def _read_bounded(log_path) -> str | None:
             if total > MAX_LOG_BYTES:
                 raise PacmanLogError("Package history exceeds the read limit")
         raw = b"".join(chunks)
+        identity = [info.st_dev, info.st_ino, len(raw), info.st_mtime_ns]
     finally:
         os.close(descriptor)
     if any(len(line) > MAX_LINE_BYTES for line in raw.splitlines()):
         raise PacmanLogError("Package history contains an overlong line")
-    return raw.decode("utf-8", errors="replace")
+    return raw.decode("utf-8", errors="replace"), identity
 
 
 @dataclass
@@ -161,7 +162,8 @@ def _split_versions(action: str, raw: str) -> tuple[str | None, str | None]:
     return (None, value) if action == "installed" else (value, None)
 
 
-def read(path=None) -> tuple[list[PackageChange], list[tuple[datetime, str]]]:
+def read_with_identity(path=None) -> tuple[
+        list[PackageChange], list[tuple[datetime, str]], list[int] | None]:
     """All package changes and pacman invocations, oldest first.
 
     A missing log is normal and yields empty results. A present log that
@@ -170,9 +172,9 @@ def read(path=None) -> tuple[list[PackageChange], list[tuple[datetime, str]]]:
     log_path = path or paths.pacman_log()
     changes: list[PackageChange] = []
     commands: list[tuple[datetime, str]] = []
-    text = _read_bounded(log_path)
+    text, identity = _read_bounded(log_path)
     if text is None:
-        return changes, commands
+        return changes, commands, identity
     events = 0
     for line in text.splitlines():
         match = _ALPM.match(line)
@@ -203,6 +205,11 @@ def read(path=None) -> tuple[list[PackageChange], list[tuple[datetime, str]]]:
                 events += 1
                 if events > MAX_EVENTS:
                     raise PacmanLogError("Package history contains too many events")
+    return changes, commands, identity
+
+
+def read(path=None) -> tuple[list[PackageChange], list[tuple[datetime, str]]]:
+    changes, commands, _identity = read_with_identity(path)
     return changes, commands
 
 
@@ -225,17 +232,18 @@ def _mark_aur(changes: list[PackageChange], commands: list[tuple[datetime, str]]
                 break
 
 
-def sessions(path=None, gap: timedelta = SESSION_GAP) -> list[Session]:
+def sessions_with_identity(path=None, gap: timedelta = SESSION_GAP) -> tuple[
+        list[Session], list[int] | None]:
     """Group package activity into updates, newest session last.
 
     Transactions that run within `gap` of each other belong to the same
     update: an Omarchy update runs pacman, then migrations, then yay, all
     inside a few minutes, while the next update is hours or days away.
     """
-    changes, commands = read(path)
+    changes, commands, identity = read_with_identity(path)
     _mark_aur(changes, commands)
     if not changes:
-        return []
+        return [], identity
 
     changes.sort(key=lambda c: c.at)
     grouped: list[Session] = []
@@ -253,4 +261,9 @@ def sessions(path=None, gap: timedelta = SESSION_GAP) -> list[Session]:
             cmd for at, cmd in commands
             if session.started - gap <= at <= session.finished + gap
         ]
+    return grouped, identity
+
+
+def sessions(path=None, gap: timedelta = SESSION_GAP) -> list[Session]:
+    grouped, _identity = sessions_with_identity(path, gap)
     return grouped
