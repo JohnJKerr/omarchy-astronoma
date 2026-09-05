@@ -212,9 +212,9 @@ Panel {
           }
 
           Text {
-            visible: service.lastError !== ""
+            visible: service.problem !== ""
             width: parent.width
-            text: service.lastError + ". Press R to retry."
+            text: service.problem + ". Press R to retry."
             textFormat: Text.PlainText
             color: Color.urgent
             font.family: root.fontFamily
@@ -225,7 +225,7 @@ Panel {
           // Nothing captured yet: say so plainly, and let the recent
           // releases below carry the panel.
           Text {
-            visible: !root.latest && service.lastError === ""
+            visible: !root.latest && service.problem === ""
             width: parent.width
             text: service.everLoaded
               ? "No update has been captured on this machine yet. Here is what changed in Omarchy recently."

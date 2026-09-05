@@ -144,7 +144,8 @@ def run_if_changed() -> dict:
     if previous == signature and history.any_records():
         return {"captured": [], "skipped": [], "unchanged": True}
     result = run()
-    paths.atomic_json_write(stamp, signature, private=True)
+    if not result.get("error"):
+        paths.atomic_json_write(stamp, signature, private=True)
     return result
 
 
@@ -159,7 +160,14 @@ def run(force: bool = False) -> dict:
 
 
 def _run_locked(force: bool = False) -> dict:
-    sessions = [s for s in pacmanlog.sessions() if _is_update(s)]
+    try:
+        sessions = [s for s in pacmanlog.sessions() if _is_update(s)]
+    except pacmanlog.PacmanLogError as error:
+        return {
+            "captured": [], "skipped": [], "sessions": 0,
+            "updateLogPresent": False, "updateLogAttached": False,
+            "error": str(error),
+        }
     log = updatelog.load()
     records = history.all_records()
     known = set() if force else {

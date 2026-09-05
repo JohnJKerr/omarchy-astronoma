@@ -38,7 +38,8 @@ def _earliest_recorded_version(records: list[dict]) -> str | None:
     return min(candidates, key=versions.release_key) if candidates else None
 
 
-def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
+def build(refresh: bool = False, notes_limit: int | None = None,
+          capture_error: str = "") -> dict:
     """The full view: latest update, history, and the releases behind them.
 
     Every section degrades on its own. No network yields cached notes; no
@@ -99,6 +100,7 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
         "selectedAgent": agent.selected(),
         "agentSelectionMissing": agent.preferred_key() is not None and agent.selected() is None,
         "agentSummariesEnabled": agent.enabled(),
+        "captureError": str(capture_error or "")[:200],
         "latest": None,
     }
 

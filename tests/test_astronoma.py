@@ -121,6 +121,56 @@ class VersionTests(unittest.TestCase):
 
 
 class PacmanLogTests(TempEnv):
+    def test_unsafe_and_over_limit_logs_are_reported(self):
+        from unittest import mock
+        from astronoma import capture, cli, history, pacmanlog, report
+
+        capture.run_if_changed()
+        retained_id = history.latest()["id"]
+        stamp = self.state / ".capture-sources.json"
+        retained_stamp = stamp.read_bytes()
+        outside = self.pacman.with_name("outside.log")
+        outside.write_text(PACMAN_SAMPLE)
+        self.pacman.unlink()
+        self.pacman.symlink_to(outside)
+        result = capture.run_if_changed()
+        self.assertIn("safely", result["error"])
+        self.assertEqual(history.latest()["id"], retained_id)
+        self.assertEqual(stamp.read_bytes(), retained_stamp)
+
+        self.pacman.unlink()
+        self.pacman.write_bytes(b"x" * 33)
+        with mock.patch.object(pacmanlog, "MAX_LOG_BYTES", 32), \
+                mock.patch.object(report.releases_mod, "load",
+                                  return_value=([], {"stale": True})):
+            result = capture.run_if_changed()
+            self.assertIn("read limit", result["error"])
+
+            import contextlib
+            import io
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(cli.main(["report"]), 0)
+            payload = json.loads(output.getvalue())
+            self.assertIn("read limit", payload["captureError"])
+            self.assertEqual(payload["latest"]["id"], retained_id)
+
+    def test_log_line_and_event_counts_are_bounded(self):
+        from unittest import mock
+        from astronoma import pacmanlog
+
+        self.pacman.write_text("x" * 17 + "\n")
+        with mock.patch.object(pacmanlog, "MAX_LINE_BYTES", 16):
+            with self.assertRaises(pacmanlog.PacmanLogError):
+                pacmanlog.read()
+
+        self.pacman.write_text(
+            "[2026-08-28T23:00:00+0100] [ALPM] installed one (1)\n"
+            "[2026-08-28T23:00:01+0100] [ALPM] installed two (1)\n"
+        )
+        with mock.patch.object(pacmanlog, "MAX_EVENTS", 1):
+            with self.assertRaises(pacmanlog.PacmanLogError):
+                pacmanlog.read()
     def test_mixed_legacy_and_modern_timestamps_are_grouped(self):
         from astronoma import pacmanlog
         self.pacman.write_text(

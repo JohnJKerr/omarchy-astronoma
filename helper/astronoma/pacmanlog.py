@@ -8,7 +8,9 @@ clustering transactions that run back to back, which is what an update
 looks like from the log's point of view.
 """
 
+import os
 import re
+import stat
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -28,6 +30,45 @@ _PACMAN_CMD = re.compile(
 # An Omarchy update is one long run of package activity. Anything separated
 # by more than this from the previous change is a different update.
 SESSION_GAP = timedelta(minutes=45)
+MAX_LOG_BYTES = 64 * 1024 * 1024
+MAX_LINE_BYTES = 64 * 1024
+MAX_EVENTS = 250_000
+
+
+class PacmanLogError(ValueError):
+    """The package log exists but cannot safely be consumed."""
+
+
+def _read_bounded(log_path) -> str | None:
+    try:
+        descriptor = os.open(
+            log_path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
+        )
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise PacmanLogError("Package history could not be opened safely") from error
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid not in (0, os.geteuid()):
+            raise PacmanLogError("Package history is not a trusted regular file")
+        if info.st_size > MAX_LOG_BYTES:
+            raise PacmanLogError("Package history exceeds the read limit")
+        chunks, total = [], 0
+        while True:
+            chunk = os.read(descriptor, min(65536, MAX_LOG_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_LOG_BYTES:
+                raise PacmanLogError("Package history exceeds the read limit")
+        raw = b"".join(chunks)
+    finally:
+        os.close(descriptor)
+    if any(len(line) > MAX_LINE_BYTES for line in raw.splitlines()):
+        raise PacmanLogError("Package history contains an overlong line")
+    return raw.decode("utf-8", errors="replace")
 
 
 @dataclass
@@ -123,41 +164,45 @@ def _split_versions(action: str, raw: str) -> tuple[str | None, str | None]:
 def read(path=None) -> tuple[list[PackageChange], list[tuple[datetime, str]]]:
     """All package changes and pacman invocations, oldest first.
 
-    A missing or unreadable log is not an error — plenty of machines will
-    not hand us one — so it yields empty results and lets the caller carry
-    on with whatever other sources it has.
+    A missing log is normal and yields empty results. A present log that
+    cannot be consumed within the trust and resource contract is reported.
     """
     log_path = path or paths.pacman_log()
     changes: list[PackageChange] = []
     commands: list[tuple[datetime, str]] = []
-    try:
-        handle = open(log_path, "r", errors="replace")
-    except OSError:
+    text = _read_bounded(log_path)
+    if text is None:
         return changes, commands
-    with handle:
-        for line in handle:
-            match = _ALPM.match(line.rstrip("\n"))
-            if match:
-                at = _parse_timestamp(match.group("ts"))
-                if at is None:
-                    continue
-                action = match.group("action")
-                before, after = _split_versions(action, match.group("versions"))
-                changes.append(
-                    PackageChange(
-                        name=match.group("name"),
-                        action=action,
-                        at=at,
-                        from_version=before,
-                        to_version=after,
-                    )
-                )
+    events = 0
+    for line in text.splitlines():
+        match = _ALPM.match(line)
+        if match:
+            at = _parse_timestamp(match.group("ts"))
+            if at is None:
                 continue
-            command = _PACMAN_CMD.match(line.rstrip("\n"))
-            if command:
-                at = _parse_timestamp(command.group("ts"))
-                if at is not None:
-                    commands.append((at, command.group("cmd")))
+            action = match.group("action")
+            before, after = _split_versions(action, match.group("versions"))
+            changes.append(
+                PackageChange(
+                    name=match.group("name"),
+                    action=action,
+                    at=at,
+                    from_version=before,
+                    to_version=after,
+                )
+            )
+            events += 1
+            if events > MAX_EVENTS:
+                raise PacmanLogError("Package history contains too many events")
+            continue
+        command = _PACMAN_CMD.match(line)
+        if command:
+            at = _parse_timestamp(command.group("ts"))
+            if at is not None:
+                commands.append((at, command.group("cmd")))
+                events += 1
+                if events > MAX_EVENTS:
+                    raise PacmanLogError("Package history contains too many events")
     return changes, commands
 
 

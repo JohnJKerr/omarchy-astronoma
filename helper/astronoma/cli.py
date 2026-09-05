@@ -93,12 +93,15 @@ def main(argv=None) -> int:
         return _emit(capture.run(force=args.force), pretty)
 
     if args.command == "report":
+        capture_error = ""
         if not args.no_capture:
             # Capturing first is what makes a freshly finished update show up
             # the moment the panel is opened.
-            capture.run_if_changed()
+            capture_result = capture.run_if_changed()
+            capture_error = str(capture_result.get("error") or "")
         return _emit(
-            report.build(refresh=args.refresh, notes_limit=args.notes_limit), pretty
+            report.build(refresh=args.refresh, notes_limit=args.notes_limit,
+                         capture_error=capture_error), pretty
         )
 
     if args.command == "show":
