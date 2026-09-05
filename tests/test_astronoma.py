@@ -638,19 +638,26 @@ class AgentTests(TempEnv):
         self.assertIn('text: "YOUR PERSONALISED SUMMARY"', flightlog)
         self.assertNotIn('text: "WHAT THIS MEANS FOR YOU"', flightlog)
 
-    def test_summary_surfaces_show_and_pass_the_selected_agent(self):
+    def test_provider_setup_only_appears_in_full_panel(self):
         flightlog = (ROOT / "Flightlog.qml").read_text()
         bar = (ROOT / "BarWidget.qml").read_text()
         service = (ROOT / "Service.qml").read_text()
-        for surface in (flightlog, bar):
-            self.assertIn('"Choose AI provider ▾"', surface)
-            self.assertNotIn('"Choose model ▾"', surface)
-            self.assertIn("service.selectAgent(root.chosenAgentKey)", surface)
-            self.assertIn("root.chosenAgentKey", surface)
-            self.assertIn('enabled: !', surface)
-            self.assertIn('&& root.chosenAgentKey !== ""', surface)
+        self.assertIn('"Choose AI provider ▾"', flightlog)
+        self.assertNotIn('"Choose AI provider ▾"', bar)
+        self.assertNotIn('"Choose model ▾"', flightlog)
+        self.assertIn("service.selectAgent(root.chosenAgentKey)", flightlog)
+        self.assertNotIn("service.selectAgent", bar)
+        self.assertIn('&& root.chosenAgentKey !== ""', flightlog)
+        self.assertIn("service.agentSummariesEnabled && !!service.selectedAgent", bar)
         self.assertIn('argv.push("--agent")', service)
         self.assertIn('"agent-summaries", "status"', service)
+
+    def test_missing_provider_has_distinct_disabled_action_and_tooltip(self):
+        flightlog = (ROOT / "Flightlog.qml").read_text()
+        self.assertIn("id: summaryAction", flightlog)
+        self.assertIn("opacity: enabled ? 1 : 0.48", flightlog)
+        self.assertIn("id: disabledSummaryHover", flightlog)
+        self.assertIn('text: "Choose an AI provider before enabling summaries."', flightlog)
 
     def test_prompt_names_aur_packages_and_a_skipped_aur(self):
         from astronoma import agent
@@ -1144,6 +1151,42 @@ class InstallationTests(unittest.TestCase):
             )
             consent = json.loads((Path(temporary) / "state" / "agent-consent.json").read_text())
             self.assertEqual(consent, {"enabled": True})
+
+    def test_install_can_reset_agent_summaries_to_first_run_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            env = self._env(temporary)
+            state = Path(temporary) / "state"
+            summaries = state / "summaries"
+            summaries.mkdir(parents=True)
+            (summaries / "2026-08-28-2300.json").write_text('{"ok": true}\n')
+            (state / "agent-consent.json").write_text('{"enabled": true}\n')
+            (state / "agent-preference.json").write_text('{"agent": "codex"}\n')
+            (state / "seen.json").write_text('{"id": "2026-08-28-2300"}\n')
+            (state / "2026-08-28-2300.json").write_text('{"id": "2026-08-28-2300"}\n')
+
+            completed = subprocess.run(
+                [root / "install.sh", "--no-enable", "--reset-agent-summaries"],
+                cwd=root, env=env, check=True, capture_output=True, text=True,
+            )
+
+            self.assertIn("Agent summaries reset", completed.stdout)
+            self.assertEqual(list(summaries.iterdir()), [])
+            self.assertFalse((state / "agent-consent.json").exists())
+            self.assertFalse((state / "agent-preference.json").exists())
+            self.assertTrue((state / "seen.json").exists())
+            self.assertTrue((state / "2026-08-28-2300.json").exists())
+
+    def test_install_rejects_enabling_and_resetting_summaries_together(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            completed = subprocess.run(
+                [root / "install.sh", "--enable-agent-summaries",
+                 "--reset-agent-summaries"],
+                cwd=root, env=self._env(temporary), capture_output=True, text=True,
+            )
+            self.assertEqual(completed.returncode, 2)
+            self.assertIn("cannot be used together", completed.stderr)
 
     def test_uninstall_reverses_the_install_including_the_menu_row(self):
         # The menu row points at the plugin directory, so removing them in

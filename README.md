@@ -125,6 +125,14 @@ cd omarchy-astronoma
 
 Omit `--enable-agent-summaries` to keep the default in-product consent flow.
 
+To test that flow again without deleting captured update history or the
+release cache, reinstall with `--reset-agent-summaries`. This clears generated
+summaries, agent consent, and the selected provider:
+
+```bash
+./install.sh --reset-agent-summaries
+```
+
 `install.sh` copies rather than symlinks on purpose: a symlinked plugin
 directory does not hot-reload, and the shell will keep running stale QML.
 
@@ -251,7 +259,7 @@ bin/astronoma history         # captured updates, newest first
 bin/astronoma show <id>       # one update in full
 bin/astronoma releases        # Omarchy releases (--refresh to fetch)
 bin/astronoma agents          # which agent CLIs are installed
-bin/astronoma agent-summaries # consent status; add enable or disable
+bin/astronoma agent-summaries # consent status; add enable, disable, or reset
 bin/astronoma summarise [id]  # impact summary via an installed agent
 bin/astronoma seen [id]       # mark an update as read
 ```

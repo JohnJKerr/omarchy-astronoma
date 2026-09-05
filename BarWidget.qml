@@ -51,9 +51,6 @@ Panel {
     : Model.highlights(service.recentReleases, 4)
   readonly property string statusNote: Model.statusNote(service.releaseStatus)
   readonly property bool hasSummary: !!(latest && latest.summary && latest.summary.text)
-  property bool confirmingAgentEnable: false
-  property bool choosingAgent: false
-  property string chosenAgentKey: ""
   property string summaryError: ""
 
   function openFlightlog() {
@@ -95,10 +92,6 @@ Panel {
     // Enough of each release to reach its first real section, but nowhere
     // near a whole release — the card only shows a few bullets.
     notesLimit: 4000
-    onLoaded: {
-      if (service.selectedAgent) root.chosenAgentKey = String(service.selectedAgent.key)
-      else if (service.agentSelectionMissing) root.chosenAgentKey = ""
-    }
   }
 
   Component.onCompleted: service.refresh(false)
@@ -335,92 +328,24 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
-          // Present only when an agent is actually installed — the panel must
-          // not advertise something this machine cannot do — and only while
-          // pressing it would do something: produce a summary, or take the
-          // consent needed to. Once one exists, reading it is what the flight
-          // log button below already does, and a second button pointing at the
-          // same place is just a duplicate link.
-          Row {
-            visible: service.hasAgent && !!root.latest && !root.hasSummary
+          // First-run consent and provider selection belong in the full flight
+          // log, where there is room to explain them. Once configured, the
+          // compact card can still offer the convenient summarise action.
+          Button {
+            visible: service.agentSummariesEnabled && !!service.selectedAgent
+              && !!root.latest && !root.hasSummary
             width: parent.width
-            spacing: Style.space(6)
-
-            Button {
-              id: summariseAction
-              width: parent.width - barAgentChoice.width - parent.spacing
-              bordered: true
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              text: service.summaryRunning
-                ? "Summarising…"
-                : (!service.agentSummariesEnabled
-                    ? (root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries")
-                    : "Summarise what changed for me")
-              enabled: !service.summaryRunning && root.chosenAgentKey !== ""
-              function trigger() {
-                if (!visible || service.summaryRunning) return
-                root.summaryError = ""
-                if (!root.chosenAgentKey) {
-                  root.choosingAgent = true
-                  return
-                }
-                if (!service.agentSummariesEnabled) {
-                  if (!root.confirmingAgentEnable) {
-                    root.confirmingAgentEnable = true
-                    return
-                  }
-                  service.summarise(root.latest ? root.latest.id : "", false, true, root.chosenAgentKey)
-                  return
-                }
-                service.summarise(root.latest ? root.latest.id : "", false, false, root.chosenAgentKey)
-              }
-              onClicked: trigger()
+            bordered: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            text: service.summaryRunning ? "Summarising…" : "Summarise what changed for me"
+            enabled: !service.summaryRunning
+            onClicked: {
+              if (service.summaryRunning || !service.selectedAgent) return
+              root.summaryError = ""
+              service.summarise(root.latest ? root.latest.id : "", false, false,
+                                String(service.selectedAgent.key))
             }
-
-            Button {
-              id: barAgentChoice
-              width: Style.space(148)
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              text: root.chosenAgentKey
-                ? (service.agents.find(function(item) { return item.key === root.chosenAgentKey }) || {name: "Choose AI provider"}).name + " ▾"
-                : "Choose AI provider ▾"
-              onClicked: root.choosingAgent = !root.choosingAgent
-            }
-          }
-
-          Column {
-            visible: root.choosingAgent && service.hasAgent && !!root.latest && !root.hasSummary
-            width: parent.width
-            spacing: Style.space(4)
-
-            Repeater {
-              model: service.agents
-              Button {
-                required property var modelData
-                width: parent.width
-                bordered: String(modelData.key) === root.chosenAgentKey
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                text: String(modelData.name)
-                onClicked: {
-                  root.chosenAgentKey = String(modelData.key)
-                  root.choosingAgent = false
-                  service.selectAgent(root.chosenAgentKey)
-                }
-              }
-            }
-          }
-
-          Text {
-            visible: root.confirmingAgentEnable && !service.agentSummariesEnabled
-            width: parent.width
-            text: "This sends the update record and GitHub release notes to your installed agent. Agent tools are disabled and it runs from an empty temporary directory."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
           }
 
           Button {

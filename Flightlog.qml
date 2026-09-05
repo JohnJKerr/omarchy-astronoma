@@ -824,21 +824,47 @@ Item {
                     width: Math.min(parent.width, Style.space(460))
                     spacing: Style.space(8)
 
-                    Button {
+                    Item {
+                      id: summaryActionSlot
                       width: parent.width - agentChoice.width - parent.spacing
-                      bordered: true
-                      foreground: root.foreground
-                      fontFamily: root.fontFamily
-                      enabled: !detailService.summaryRunning && root.chosenAgentKey !== ""
-                      text: {
-                        if (detailService.summaryRunning) return "Summarising…"
-                        if (!service.agentSummariesEnabled)
-                          return root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries"
-                        var has = root.record && root.record.summary && root.record.summary.text
-                        return has ? "Summarise again" : "Summarise what changed for me"
+                      height: summaryAction.implicitHeight
+
+                      Button {
+                        id: summaryAction
+                        anchors.fill: parent
+                        bordered: true
+                        foreground: enabled ? root.foreground : root.faint
+                        background: enabled ? "transparent"
+                          : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.035)
+                        fontFamily: root.fontFamily
+                        enabled: !detailService.summaryRunning && root.chosenAgentKey !== ""
+                        opacity: enabled ? 1 : 0.48
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                        text: {
+                          if (detailService.summaryRunning) return "Summarising…"
+                          if (!service.agentSummariesEnabled)
+                            return root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries"
+                          var has = root.record && root.record.summary && root.record.summary.text
+                          return has ? "Summarise again" : "Summarise what changed for me"
+                        }
+                        onClicked: root.requestSummary(
+                          !!(root.record && root.record.summary && root.record.summary.text))
                       }
-                      onClicked: root.requestSummary(
-                        !!(root.record && root.record.summary && root.record.summary.text))
+
+                      MouseArea {
+                        id: disabledSummaryHover
+                        anchors.fill: parent
+                        enabled: !summaryAction.enabled && !detailService.summaryRunning
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
+                        cursorShape: Qt.ArrowCursor
+                      }
+
+                      PanelToolTip {
+                        visible: disabledSummaryHover.containsMouse
+                        text: "Choose an AI provider before enabling summaries."
+                        fontFamily: root.fontFamily
+                      }
                     }
 
                     Button {

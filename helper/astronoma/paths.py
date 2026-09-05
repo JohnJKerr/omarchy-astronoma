@@ -243,3 +243,45 @@ def atomic_json_write(target: Path, payload, private: bool = True) -> None:
         except FileNotFoundError:
             pass
         os.close(parent)
+
+
+def unlink_private(target: Path) -> None:
+    """Remove one user-owned regular file without following a mutable path."""
+    try:
+        parent = _open_directory(target.parent, private=True)
+    except FileNotFoundError:
+        return
+    try:
+        try:
+            info = os.stat(target.name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise PermissionError(f"refusing to remove untrusted file: {target}")
+        os.unlink(target.name, dir_fd=parent)
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+
+
+def clear_private_directory(directory: Path, max_entries: int) -> int:
+    """Remove a bounded set of user-owned regular files from a private directory."""
+    try:
+        descriptor = _open_directory(directory, private=True)
+    except FileNotFoundError:
+        return 0
+    try:
+        names = os.listdir(descriptor)
+        if len(names) > max_entries:
+            raise ValueError(f"directory exceeds {max_entries} entry limit")
+        for name in names:
+            info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                raise PermissionError(f"refusing to remove untrusted entry: {directory / name}")
+        for name in names:
+            os.unlink(name, dir_fd=descriptor)
+        if names:
+            os.fsync(descriptor)
+        return len(names)
+    finally:
+        os.close(descriptor)

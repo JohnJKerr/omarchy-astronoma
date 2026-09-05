@@ -26,6 +26,7 @@ TIMEOUT = 180
 MAX_SUMMARY_BYTES = 256 * 1024
 MAX_AGENT_STDOUT = 256 * 1024
 MAX_AGENT_STDERR = 64 * 1024
+MAX_CACHED_SUMMARIES = 4096
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,14 @@ def enabled() -> bool:
 
 def set_enabled(value: bool) -> None:
     paths.atomic_json_write(_consent_path(), {"enabled": bool(value)}, private=True)
+
+
+def reset_first_run() -> int:
+    """Forget generated output and choices while preserving update history."""
+    removed = paths.clear_private_directory(paths.summaries_dir(), MAX_CACHED_SUMMARIES)
+    paths.unlink_private(_consent_path())
+    paths.unlink_private(_preference_path())
+    return removed
 
 
 def preferred_key() -> str | None:

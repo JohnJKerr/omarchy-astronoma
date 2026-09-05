@@ -70,7 +70,7 @@ def main(argv=None) -> int:
 
     consent_cmd = sub.add_parser("agent-summaries", parents=[common],
                                  help="inspect or revoke agent-summary consent")
-    consent_cmd.add_argument("state", choices=("status", "enable", "disable"),
+    consent_cmd.add_argument("state", choices=("status", "enable", "disable", "reset"),
                              nargs="?", default="status")
     consent_cmd.add_argument("agent", nargs="?", help="installed agent key to select")
 
@@ -128,6 +128,10 @@ def main(argv=None) -> int:
         return _emit({"agents": agent.available()}, pretty)
 
     if args.command == "agent-summaries":
+        if args.state == "reset":
+            removed = agent.reset_first_run()
+            return _emit({"ok": True, "enabled": False,
+                          "selectedAgent": None, "summariesRemoved": removed}, pretty)
         if args.agent and not agent.set_preferred(args.agent):
             return _emit({"ok": False, "error": "Selected agent is not available"}, pretty)
         if args.state != "status":

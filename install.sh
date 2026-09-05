@@ -9,6 +9,7 @@
 #   ./install.sh --no-enable   install without touching the bar layout
 #   ./install.sh --menu        also add a row to the Omarchy menu
 #   ./install.sh --enable-agent-summaries  pre-accept the optional AI feature
+#   ./install.sh --reset-agent-summaries   clear summaries and restore first-run consent
 
 set -euo pipefail
 
@@ -18,18 +19,25 @@ TARGET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
 ENABLE=1
 MENU=0
 AGENT_SUMMARIES=0
+RESET_AGENT_SUMMARIES=0
 
 for arg in "$@"; do
   case "$arg" in
     --no-enable) ENABLE=0 ;;
     --menu) MENU=1 ;;
     --enable-agent-summaries) AGENT_SUMMARIES=1 ;;
+    --reset-agent-summaries) RESET_AGENT_SUMMARIES=1 ;;
     *)
       echo "Unknown option: $arg" >&2
       exit 2
       ;;
   esac
 done
+
+if (( AGENT_SUMMARIES && RESET_AGENT_SUMMARIES )); then
+  echo "--enable-agent-summaries and --reset-agent-summaries cannot be used together." >&2
+  exit 2
+fi
 
 command -v python3 >/dev/null || {
   echo "Astronoma needs python3, which is not on PATH." >&2
@@ -78,6 +86,11 @@ chmod +x "$TARGET_DIR/bin/astronoma" "$TARGET_DIR/bin/astronoma-supervisor" \
          "$TARGET_DIR/bin/astronoma-menu-entry"
 if [[ -f $TARGET_DIR/uninstall.sh ]]; then
   chmod +x "$TARGET_DIR/uninstall.sh"
+fi
+
+if (( RESET_AGENT_SUMMARIES )); then
+  "$TARGET_DIR/bin/astronoma" agent-summaries reset >/dev/null
+  echo "Agent summaries reset: generated summaries, consent, and provider choice were cleared."
 fi
 
 if (( AGENT_SUMMARIES )); then
