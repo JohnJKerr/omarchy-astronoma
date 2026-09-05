@@ -32,12 +32,24 @@ def _path_for(identifier: str):
 
 
 def save(record: dict) -> None:
-    identifier = str(record.get("id") or "")
-    if not valid_id(identifier):
-        raise ValueError(f"refusing to write record with invalid id: {identifier!r}")
-    target = _path_for(identifier)
-    paths.atomic_json_write(target, record, private=True)
+    save_all([record])
 
+
+def save_all(records: list[dict]) -> None:
+    """Validate a whole capture batch before replacing any stored record."""
+    prepared = []
+    for record in records:
+        identifier = str(record.get("id") or "")
+        if not valid_id(identifier):
+            raise ValueError(f"refusing to write record with invalid id: {identifier!r}")
+        if not _valid_record(record, identifier):
+            raise ValueError(f"refusing to write invalid record: {identifier}")
+        encoded = (json.dumps(record, indent=2) + "\n").encode("utf-8")
+        if len(encoded) > MAX_RECORD_BYTES:
+            raise ValueError(f"record {identifier} exceeds the byte limit")
+        prepared.append((_path_for(identifier), encoded))
+    for target, encoded in prepared:
+        paths.atomic_bytes_write(target, encoded, private=True)
 
 def load(identifier: str) -> dict | None:
     if not valid_id(identifier):

@@ -209,7 +209,7 @@ def _run_locked(force: bool = False) -> dict:
                 owner = session
                 break
 
-    captured, skipped = [], []
+    captured, skipped, pending = [], [], []
     for session in sessions:
         attached = log if session is owner else None
         identifier = history.record_id(session.started)
@@ -237,7 +237,7 @@ def _run_locked(force: bool = False) -> dict:
             for key in ("migrations", "warnings", "errors", "failed", "aurSkipped", "partial"):
                 rebuilt[key] = previous.get(key)
             rebuilt["sources"] = previous.get("sources", rebuilt["sources"])
-        history.save(rebuilt)
+        pending.append(rebuilt)
         captured.append(identifier)
 
     result = {
@@ -253,4 +253,9 @@ def _run_locked(force: bool = False) -> dict:
     }
     if migration_warning:
         result["warning"] = migration_warning[:200]
+    try:
+        history.save_all(pending)
+    except ValueError as error:
+        result["captured"] = []
+        result["error"] = f"Captured update exceeded storage limits: {error}"[:200]
     return result

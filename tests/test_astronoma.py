@@ -159,6 +159,25 @@ class VersionTests(unittest.TestCase):
 
 
 class PacmanLogTests(TempEnv):
+    def test_package_fields_and_action_counts_match_record_limits(self):
+        from unittest import mock
+        from astronoma import pacmanlog
+
+        self.pacman.write_text(
+            "[2026-08-28T23:00:00+0100] [ALPM] installed tool (" + "x" * 17 + ")\n"
+        )
+        with mock.patch.object(pacmanlog, "MAX_FIELD_CHARS", 16):
+            with self.assertRaisesRegex(pacmanlog.PacmanLogError, "package field"):
+                pacmanlog.read()
+
+        self.pacman.write_text(
+            "[2026-08-28T23:00:00+0100] [ALPM] installed one (1)\n"
+            "[2026-08-28T23:00:01+0100] [ALPM] installed two (1)\n"
+        )
+        with mock.patch.object(pacmanlog, "MAX_CHANGES_PER_ACTION", 1):
+            with self.assertRaisesRegex(pacmanlog.PacmanLogError, "too many installed"):
+                pacmanlog.read()
+
     def test_unsafe_and_over_limit_logs_are_reported(self):
         from unittest import mock
         from astronoma import capture, cli, history, pacmanlog, report
@@ -444,6 +463,31 @@ class CaptureTests(TempEnv):
 
 
 class HistoryTests(TempEnv):
+    def test_save_rejects_invalid_and_oversized_records_before_writing(self):
+        from unittest import mock
+        from astronoma import capture, history, pacmanlog
+
+        session = pacmanlog.sessions()[0]
+        record = capture._record_from(session, None, [])
+        invalid = {**record, "packages": "invalid"}
+        with self.assertRaisesRegex(ValueError, "invalid record"):
+            history.save(invalid)
+        self.assertFalse((self.state / f"{record['id']}.json").exists())
+
+        with mock.patch.object(history, "MAX_RECORD_BYTES", 32):
+            with self.assertRaisesRegex(ValueError, "byte limit"):
+                history.save(record)
+        self.assertFalse((self.state / f"{record['id']}.json").exists())
+
+    def test_save_all_validates_batch_before_writing_any_record(self):
+        from astronoma import capture, history, pacmanlog
+
+        records = [capture._record_from(session, None, []) for session in pacmanlog.sessions()[:2]]
+        records[1]["packages"] = "invalid"
+        with self.assertRaises(ValueError):
+            history.save_all(records)
+        self.assertEqual(history.all_records(), [])
+
     def test_rejects_unsafe_record_id(self):
         from astronoma import history
         with self.assertRaises(ValueError):

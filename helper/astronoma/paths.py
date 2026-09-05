@@ -296,19 +296,22 @@ def private_lock(target: Path):
         os.close(parent)
 
 
-def atomic_json_write(target: Path, payload, private: bool = True) -> None:
+def atomic_bytes_write(target: Path, encoded: bytes, private: bool = True) -> None:
     parent = _open_directory(target.parent, create=True, private=private)
     temporary = f".{target.name}.{secrets.token_hex(8)}.tmp"
     descriptor = -1
     try:
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
                              0o600 if private else 0o644, dir_fd=parent)
-        with os.fdopen(descriptor, "w") as handle:
-            descriptor = -1
-            json.dump(payload, handle, indent=2 if private else None)
-            handle.write("\n" if private else "")
-            handle.flush()
-            os.fsync(handle.fileno())
+        written = 0
+        while written < len(encoded):
+            count = os.write(descriptor, encoded[written:])
+            if count <= 0:
+                raise OSError(errno.EIO, "atomic write made no progress")
+            written += count
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
         os.replace(temporary, target.name, src_dir_fd=parent, dst_dir_fd=parent)
         os.fsync(parent)
     finally:
@@ -319,6 +322,16 @@ def atomic_json_write(target: Path, payload, private: bool = True) -> None:
         except FileNotFoundError:
             pass
         os.close(parent)
+
+
+def atomic_json_write(target: Path, payload, private: bool = True,
+                      max_bytes: int | None = None) -> None:
+    encoded = json.dumps(payload, indent=2 if private else None).encode("utf-8")
+    if private:
+        encoded += b"\n"
+    if max_bytes is not None and len(encoded) > max_bytes:
+        raise ValueError(f"JSON exceeds {max_bytes} byte limit")
+    atomic_bytes_write(target, encoded, private)
 
 
 def unlink_private(target: Path) -> None:

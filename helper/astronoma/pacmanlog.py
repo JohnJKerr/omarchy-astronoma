@@ -33,6 +33,8 @@ SESSION_GAP = timedelta(minutes=45)
 MAX_LOG_BYTES = 64 * 1024 * 1024
 MAX_LINE_BYTES = 64 * 1024
 MAX_EVENTS = 250_000
+MAX_CHANGES_PER_ACTION = 5000
+MAX_FIELD_CHARS = 1024
 
 
 class PacmanLogError(ValueError):
@@ -176,6 +178,7 @@ def read_with_identity(path=None) -> tuple[
     if text is None:
         return changes, commands, identity
     events = 0
+    action_counts = {"upgraded": 0, "installed": 0, "removed": 0}
     for line in text.splitlines():
         match = _ALPM.match(line)
         if match:
@@ -184,6 +187,12 @@ def read_with_identity(path=None) -> tuple[
                 continue
             action = match.group("action")
             before, after = _split_versions(action, match.group("versions"))
+            fields = (match.group("name"), before, after)
+            if any(value is not None and len(value) > MAX_FIELD_CHARS for value in fields):
+                raise PacmanLogError("Package history contains an overlong package field")
+            action_counts[action] += 1
+            if action_counts[action] > MAX_CHANGES_PER_ACTION:
+                raise PacmanLogError(f"Package history contains too many {action} packages")
             changes.append(
                 PackageChange(
                     name=match.group("name"),
