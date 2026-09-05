@@ -541,6 +541,21 @@ class AgentTests(TempEnv):
         agent.set_enabled(True)
         self.assertTrue(agent.enabled())
 
+    def test_agent_preference_requires_an_installed_provider(self):
+        from astronoma import agent
+        original = agent.Agent.available
+        agent.Agent.available = lambda item: item.key == "codex"
+        try:
+            self.assertFalse(agent.set_preferred("claude"))
+            self.assertTrue(agent.set_preferred("codex"))
+            self.assertEqual(agent.preferred_key(), "codex")
+            self.assertEqual(agent.selected()["name"], "Codex")
+            agent.Agent.available = lambda _item: False
+            self.assertIsNone(agent.selected())
+            self.assertIsNone(agent.resolve())
+        finally:
+            agent.Agent.available = original
+
     def test_cached_summary_rejects_unsafe_id(self):
         from astronoma import agent
         self.assertIsNone(agent.cached_summary("../../escape"))
@@ -622,6 +637,20 @@ class AgentTests(TempEnv):
         flightlog = (ROOT / "Flightlog.qml").read_text()
         self.assertIn('text: "YOUR PERSONALISED SUMMARY"', flightlog)
         self.assertNotIn('text: "WHAT THIS MEANS FOR YOU"', flightlog)
+
+    def test_summary_surfaces_show_and_pass_the_selected_agent(self):
+        flightlog = (ROOT / "Flightlog.qml").read_text()
+        bar = (ROOT / "BarWidget.qml").read_text()
+        service = (ROOT / "Service.qml").read_text()
+        for surface in (flightlog, bar):
+            self.assertIn('"Choose AI provider ▾"', surface)
+            self.assertNotIn('"Choose model ▾"', surface)
+            self.assertIn("service.selectAgent(root.chosenAgentKey)", surface)
+            self.assertIn("root.chosenAgentKey", surface)
+            self.assertIn('enabled: !', surface)
+            self.assertIn('&& root.chosenAgentKey !== ""', surface)
+        self.assertIn('argv.push("--agent")', service)
+        self.assertIn('"agent-summaries", "status"', service)
 
     def test_prompt_names_aur_packages_and_a_skipped_aur(self):
         from astronoma import agent
@@ -803,6 +832,25 @@ class SecurityBoundaryTests(TempEnv):
                     [sys.executable, "-c", "import os,time; os.close(1); os.close(2); time.sleep(5)"],
                     workdir, timeout=0.1,
                 )
+
+    def test_agent_child_cannot_wait_on_the_shells_open_stdin(self):
+        from astronoma import agent
+        read_fd, write_fd = os.pipe()
+        saved_stdin = os.dup(0)
+        os.dup2(read_fd, 0)
+        os.close(read_fd)
+        try:
+            with tempfile.TemporaryDirectory() as workdir:
+                code, stdout, _ = agent._run_bounded(
+                    [sys.executable, "-c",
+                     "import sys; sys.stdin.read(); print('finished')"],
+                    workdir, timeout=0.2,
+                )
+            self.assertEqual((code, stdout.strip()), (0, b"finished"))
+        finally:
+            os.dup2(saved_stdin, 0)
+            os.close(saved_stdin)
+            os.close(write_fd)
 
     def test_untrusted_qml_text_is_plain_and_actions_are_pinned(self):
         root = Path(__file__).parents[1]

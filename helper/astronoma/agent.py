@@ -77,6 +77,10 @@ def _consent_path():
     return paths.state_dir() / "agent-consent.json"
 
 
+def _preference_path():
+    return paths.state_dir() / "agent-preference.json"
+
+
 def enabled() -> bool:
     try:
         payload = paths.read_json(_consent_path(), 1024)
@@ -90,6 +94,35 @@ def set_enabled(value: bool) -> None:
     paths.atomic_json_write(_consent_path(), {"enabled": bool(value)}, private=True)
 
 
+def preferred_key() -> str | None:
+    try:
+        payload = paths.read_json(_preference_path(), 1024)
+    except (OSError, ValueError):
+        return None
+    valid_keys = {candidate.key for candidate in AGENTS}
+    if (isinstance(payload, dict) and set(payload) == {"agent"}
+            and isinstance(payload.get("agent"), str)
+            and payload["agent"] in valid_keys):
+        return payload["agent"]
+    return None
+
+
+def set_preferred(key: str) -> bool:
+    chosen = next((candidate for candidate in AGENTS if candidate.key == key), None)
+    if not chosen or not chosen.available():
+        return False
+    paths.atomic_json_write(_preference_path(), {"agent": key}, private=True)
+    return True
+
+
+def selected() -> dict | None:
+    key = preferred_key()
+    chosen = next((candidate for candidate in AGENTS if candidate.key == key), None)
+    if not chosen or not chosen.available():
+        return None
+    return {"key": chosen.key, "name": chosen.name, "command": chosen.command}
+
+
 def available() -> list[dict]:
     return [
         {"key": a.key, "name": a.name, "command": a.command}
@@ -98,12 +131,17 @@ def available() -> list[dict]:
 
 
 def resolve(key: str | None = None) -> Agent | None:
-    """The agent to use: the one asked for, else the first installed."""
+    """The requested or preferred agent, with first-installed legacy fallback."""
     if key:
         for candidate in AGENTS:
             if candidate.key == key:
                 return candidate if candidate.available() else None
         return None
+    preferred = preferred_key()
+    if preferred:
+        for candidate in AGENTS:
+            if candidate.key == preferred:
+                return candidate if candidate.available() else None
     for candidate in AGENTS:
         if candidate.available():
             return candidate
@@ -297,7 +335,12 @@ def _run_bounded(argv: list[str], workdir: str, timeout: float = TIMEOUT,
                  stdout_limit: int = MAX_AGENT_STDOUT,
                  stderr_limit: int = MAX_AGENT_STDERR) -> tuple[int, bytes, bytes]:
     """Drain bounded output while the producer runs, with a process-group deadline."""
-    process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    # QML's Process can leave stdin as an open pipe. Codex treats piped stdin
+    # as additional prompt input even when a positional prompt was supplied,
+    # so inheriting that descriptor makes it wait forever for EOF. These are
+    # deliberately non-interactive jobs: give every child an immediate EOF.
+    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                cwd=workdir, start_new_session=True)
     def cancelled(signum, _frame):
         raise SystemExit(128 + signum)

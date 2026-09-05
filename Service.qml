@@ -37,6 +37,8 @@ Item {
   readonly property var releaseStatus: report && report.releases ? (report.releases.status || ({})) : ({})
   readonly property var agents: report && report.agents ? report.agents : []
   readonly property bool hasAgent: agents.length > 0
+  readonly property var selectedAgent: report && report.selectedAgent ? report.selectedAgent : null
+  readonly property bool agentSelectionMissing: report && report.agentSelectionMissing === true
   readonly property bool agentSummariesEnabled: report && report.agentSummariesEnabled === true
   readonly property string installed: report && report.omarchy ? (report.omarchy.installed || "") : ""
   readonly property string unreadId: report && report.unread ? String(report.unread) : ""
@@ -84,15 +86,21 @@ Item {
     seenProcess.start(argv)
   }
 
-  function summarise(id, refresh, enable) {
+  function summarise(id, refresh, enable, agentKey) {
     if (summaryProcess.running) return
     summaryRunning = true
     var argv = [helper, "summarise"]
     if (id) argv.push(String(id))
     if (refresh) argv.push("--refresh")
     if (enable) argv.push("--enable")
+    if (agentKey) { argv.push("--agent"); argv.push(String(agentKey)) }
     argv.push("--pretty")
     summaryProcess.start(argv)
+  }
+
+  function selectAgent(agentKey) {
+    if (!agentKey || agentSelectionProcess.running) return
+    agentSelectionProcess.start([helper, "agent-summaries", "status", String(agentKey)])
   }
 
   property bool summaryRunning: false
@@ -134,6 +142,13 @@ Item {
     maxStdoutChars: 4096
     deadlineMs: 5000
     // Re-read so the bar drops its unread state as soon as it is recorded.
+    onFinished: root.refresh(false)
+  }
+
+  BoundedProcess {
+    id: agentSelectionProcess
+    maxStdoutChars: 4096
+    deadlineMs: 5000
     onFinished: root.refresh(false)
   }
 

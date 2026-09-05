@@ -52,6 +52,8 @@ Panel {
   readonly property string statusNote: Model.statusNote(service.releaseStatus)
   readonly property bool hasSummary: !!(latest && latest.summary && latest.summary.text)
   property bool confirmingAgentEnable: false
+  property bool choosingAgent: false
+  property string chosenAgentKey: ""
   property string summaryError: ""
 
   function openFlightlog() {
@@ -93,7 +95,10 @@ Panel {
     // Enough of each release to reach its first real section, but nowhere
     // near a whole release — the card only shows a few bullets.
     notesLimit: 4000
-    onLoaded: {}
+    onLoaded: {
+      if (service.selectedAgent) root.chosenAgentKey = String(service.selectedAgent.key)
+      else if (service.agentSelectionMissing) root.chosenAgentKey = ""
+    }
   }
 
   Component.onCompleted: service.refresh(false)
@@ -336,33 +341,76 @@ Panel {
           // consent needed to. Once one exists, reading it is what the flight
           // log button below already does, and a second button pointing at the
           // same place is just a duplicate link.
-          Button {
-            id: summariseAction
+          Row {
             visible: service.hasAgent && !!root.latest && !root.hasSummary
             width: parent.width
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            text: service.summaryRunning
-              ? "Summarising…"
-              : (!service.agentSummariesEnabled
-                  ? (root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries")
-                  : "Summarise what changed for me")
-            enabled: !service.summaryRunning
-            function trigger() {
-              if (!visible || service.summaryRunning) return
-              root.summaryError = ""
-              if (!service.agentSummariesEnabled) {
-                if (!root.confirmingAgentEnable) {
-                  root.confirmingAgentEnable = true
+            spacing: Style.space(6)
+
+            Button {
+              id: summariseAction
+              width: parent.width - barAgentChoice.width - parent.spacing
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              text: service.summaryRunning
+                ? "Summarising…"
+                : (!service.agentSummariesEnabled
+                    ? (root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries")
+                    : "Summarise what changed for me")
+              enabled: !service.summaryRunning && root.chosenAgentKey !== ""
+              function trigger() {
+                if (!visible || service.summaryRunning) return
+                root.summaryError = ""
+                if (!root.chosenAgentKey) {
+                  root.choosingAgent = true
                   return
                 }
-                service.summarise(root.latest ? root.latest.id : "", false, true)
-                return
+                if (!service.agentSummariesEnabled) {
+                  if (!root.confirmingAgentEnable) {
+                    root.confirmingAgentEnable = true
+                    return
+                  }
+                  service.summarise(root.latest ? root.latest.id : "", false, true, root.chosenAgentKey)
+                  return
+                }
+                service.summarise(root.latest ? root.latest.id : "", false, false, root.chosenAgentKey)
               }
-              service.summarise(root.latest ? root.latest.id : "", false, false)
+              onClicked: trigger()
             }
-            onClicked: trigger()
+
+            Button {
+              id: barAgentChoice
+              width: Style.space(148)
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              text: root.chosenAgentKey
+                ? (service.agents.find(function(item) { return item.key === root.chosenAgentKey }) || {name: "Choose AI provider"}).name + " ▾"
+                : "Choose AI provider ▾"
+              onClicked: root.choosingAgent = !root.choosingAgent
+            }
+          }
+
+          Column {
+            visible: root.choosingAgent && service.hasAgent && !!root.latest && !root.hasSummary
+            width: parent.width
+            spacing: Style.space(4)
+
+            Repeater {
+              model: service.agents
+              Button {
+                required property var modelData
+                width: parent.width
+                bordered: String(modelData.key) === root.chosenAgentKey
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                text: String(modelData.name)
+                onClicked: {
+                  root.chosenAgentKey = String(modelData.key)
+                  root.choosingAgent = false
+                  service.selectAgent(root.chosenAgentKey)
+                }
+              }
+            }
           }
 
           Text {

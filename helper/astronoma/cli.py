@@ -72,6 +72,7 @@ def main(argv=None) -> int:
                                  help="inspect or revoke agent-summary consent")
     consent_cmd.add_argument("state", choices=("status", "enable", "disable"),
                              nargs="?", default="status")
+    consent_cmd.add_argument("agent", nargs="?", help="installed agent key to select")
 
     summarise_cmd = sub.add_parser("summarise", parents=[common], help="agent impact summary")
     summarise_cmd.add_argument("id", nargs="?", help="defaults to the latest update")
@@ -127,9 +128,12 @@ def main(argv=None) -> int:
         return _emit({"agents": agent.available()}, pretty)
 
     if args.command == "agent-summaries":
+        if args.agent and not agent.set_preferred(args.agent):
+            return _emit({"ok": False, "error": "Selected agent is not available"}, pretty)
         if args.state != "status":
             agent.set_enabled(args.state == "enable")
-        return _emit({"ok": True, "enabled": agent.enabled()}, pretty)
+        return _emit({"ok": True, "enabled": agent.enabled(),
+                      "selectedAgent": agent.selected()}, pretty)
 
     if args.command == "summarise":
         if args.enable:

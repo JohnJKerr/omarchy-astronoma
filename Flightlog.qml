@@ -22,6 +22,8 @@ Item {
   property int selectedReleaseIndex: 0
   property string summaryError: ""
   property bool confirmingAgentEnable: false
+  property bool choosingAgent: false
+  property string chosenAgentKey: ""
   property bool showingUpcoming: false
   property bool showingEarlier: false
   property int hoveredHistoryIndex: -1
@@ -189,17 +191,24 @@ Item {
 
   function requestSummary(force) {
     if (!record || !service.hasAgent || detailService.summaryRunning) return
+    if (!root.chosenAgentKey) {
+      root.choosingAgent = true
+      return
+    }
     if (!service.agentSummariesEnabled && !root.confirmingAgentEnable) {
       root.confirmingAgentEnable = true
       return
     }
     summaryError = ""
-    detailService.summarise(record.id, force === true, !service.agentSummariesEnabled)
+    detailService.summarise(record.id, force === true,
+                            !service.agentSummariesEnabled, root.chosenAgentKey)
   }
 
   Service {
     id: service
     onLoaded: {
+      if (service.selectedAgent) root.chosenAgentKey = String(service.selectedAgent.key)
+      else if (service.agentSelectionMissing) root.chosenAgentKey = ""
       // Reading the list is what marks the newest update read, matching
       // the bar widget's card.
       if (root.opened && service.hasUnread) service.markSeen(service.unreadId)
@@ -811,21 +820,60 @@ Item {
                     wrapMode: Text.WordWrap
                   }
 
-                  Button {
-                    width: Math.min(parent.width, Style.space(320))
-                    bordered: true
-                    foreground: root.foreground
-                    fontFamily: root.fontFamily
-                    enabled: !detailService.summaryRunning
-                    text: {
-                      if (detailService.summaryRunning) return "Summarising…"
-                      if (!service.agentSummariesEnabled)
-                        return root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries"
-                      var has = root.record && root.record.summary && root.record.summary.text
-                      return has ? "Summarise again" : "Summarise what changed for me"
+                  Row {
+                    width: Math.min(parent.width, Style.space(460))
+                    spacing: Style.space(8)
+
+                    Button {
+                      width: parent.width - agentChoice.width - parent.spacing
+                      bordered: true
+                      foreground: root.foreground
+                      fontFamily: root.fontFamily
+                      enabled: !detailService.summaryRunning && root.chosenAgentKey !== ""
+                      text: {
+                        if (detailService.summaryRunning) return "Summarising…"
+                        if (!service.agentSummariesEnabled)
+                          return root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries"
+                        var has = root.record && root.record.summary && root.record.summary.text
+                        return has ? "Summarise again" : "Summarise what changed for me"
+                      }
+                      onClicked: root.requestSummary(
+                        !!(root.record && root.record.summary && root.record.summary.text))
                     }
-                    onClicked: root.requestSummary(
-                      !!(root.record && root.record.summary && root.record.summary.text))
+
+                    Button {
+                      id: agentChoice
+                      width: Style.space(160)
+                      foreground: root.foreground
+                      fontFamily: root.fontFamily
+                      text: root.chosenAgentKey
+                        ? (service.agents.find(function(item) { return item.key === root.chosenAgentKey }) || {name: "Choose AI provider"}).name + " ▾"
+                        : "Choose AI provider ▾"
+                      onClicked: root.choosingAgent = !root.choosingAgent
+                    }
+                  }
+
+                  Column {
+                    visible: root.choosingAgent
+                    width: Math.min(parent.width, Style.space(460))
+                    spacing: Style.space(4)
+
+                    Repeater {
+                      model: service.agents
+                      Button {
+                        required property var modelData
+                        width: parent.width
+                        bordered: String(modelData.key) === root.chosenAgentKey
+                        foreground: root.foreground
+                        fontFamily: root.fontFamily
+                        text: String(modelData.name)
+                        onClicked: {
+                          root.chosenAgentKey = String(modelData.key)
+                          root.choosingAgent = false
+                          service.selectAgent(root.chosenAgentKey)
+                        }
+                      }
+                    }
                   }
 
                   Text {
@@ -842,7 +890,7 @@ Item {
                     visible: detailService.summaryRunning
                     width: parent.width
                     text: "Running "
-                      + (service.agents.length ? service.agents[0].name : "the agent")
+                      + (service.agents.find(function(item) { return item.key === root.chosenAgentKey }) || {name: "the agent"}).name
                       + " over this update. This can take a minute."
                     color: root.faint
                     font.family: root.fontFamily

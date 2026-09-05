@@ -95,6 +95,8 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
         # Drives whether the bar asks for attention at all.
         "unread": history.unread_in(records),
         "agents": agent.available(),
+        "selectedAgent": agent.selected(),
+        "agentSelectionMissing": agent.preferred_key() is not None and agent.selected() is None,
         "agentSummariesEnabled": agent.enabled(),
         "latest": None,
     }
@@ -126,5 +128,7 @@ def detail(identifier: str, refresh: bool = False) -> dict:
         "releaseStatus": status,
         "summary": agent.cached_summary(identifier),
         "agents": agent.available(),
+        "selectedAgent": agent.selected(),
+        "agentSelectionMissing": agent.preferred_key() is not None and agent.selected() is None,
         "agentSummariesEnabled": agent.enabled(),
     }
