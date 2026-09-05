@@ -8,7 +8,6 @@ The feature is optional: discovering no supported agent leaves every other
 view available.
 """
 
-import json
 import re
 import shutil
 import subprocess

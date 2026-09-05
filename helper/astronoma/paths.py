@@ -250,27 +250,6 @@ def read_json(target: Path, max_bytes: int, private: bool = True,
     return payload
 
 
-def json_within_limits(value, max_items: int, max_string: int, max_depth: int = 8) -> bool:
-    """Reject JSON shapes capable of inflating work after a bounded read."""
-    remaining = max_items
-
-    def visit(item, depth):
-        nonlocal remaining
-        remaining -= 1
-        if remaining < 0 or depth > max_depth:
-            return False
-        if isinstance(item, str):
-            return len(item) <= max_string
-        if isinstance(item, list):
-            return all(visit(child, depth + 1) for child in item)
-        if isinstance(item, dict):
-            return all(isinstance(key, str) and len(key) <= 80
-                       and visit(child, depth + 1) for key, child in item.items())
-        return item is None or isinstance(item, (bool, int, float))
-
-    return visit(value, 0)
-
-
 def _bounded_names(descriptor: int, max_entries: int) -> list[str]:
     names = []
     with os.scandir(descriptor) as entries:

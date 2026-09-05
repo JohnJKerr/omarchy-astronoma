@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Add (or remove) Astronoma's row in the Omarchy menu.
 
-With the bar widget on its default `unread` visibility the rocket stands
-down once an update has been read, which leaves no obvious way back in.
-This puts a permanent row under Update, so the flight log is always
-reachable without memorising an IPC call or spending a keybinding.
+This puts a permanent row under Update, so the flight log remains reachable
+if the bar widget is hidden or configured to appear only for unread updates,
+without memorising an IPC call or spending a keybinding.
 
 Edits ~/.config/omarchy/extensions/omarchy-menu.jsonc, which is JSONC and
 usually full of the user's own comments, so the row is spliced in as text

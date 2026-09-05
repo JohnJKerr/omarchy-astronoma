@@ -16,7 +16,6 @@ import "Model.js" as Model
 Item {
   id: root
 
-  property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property bool opened: false
   property int selectedIndex: 0
   property int selectedReleaseIndex: 0
@@ -44,8 +43,6 @@ Item {
   readonly property bool initialLoading: root.opened && service.loading && !service.everLoaded
   readonly property bool detailLoading: !root.initialLoading
     && !root.showingReleaseCatalogue && detailService.loading
-  readonly property var selectedRow: hasRows && selectedIndex >= 0 && selectedIndex < rows.length
-    ? rows[selectedIndex] : null
   // The detail pane renders `detail` when a specific update is loaded, and
   // falls back to the report's own latest so the first paint is never empty.
   readonly property var record: detailService.record

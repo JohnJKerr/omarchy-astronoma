@@ -49,10 +49,6 @@ Item {
   readonly property string installed: report && report.omarchy ? (report.omarchy.installed || "") : ""
   readonly property string unreadId: report && report.unread ? String(report.unread) : ""
   readonly property bool hasUnread: unreadId !== ""
-  // Something worth putting in front of the user: a captured update, or
-  // failing that, release notes we can still show.
-  readonly property bool hasAnything: !!latest || recentReleases.length > 0
-
   signal loaded()
   signal summaryFinished(var payload)
 

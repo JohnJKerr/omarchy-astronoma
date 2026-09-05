@@ -5,11 +5,10 @@ import "Model.js" as Model
 
 // Drill-down into the packages an update moved.
 //
-// One update can move a thousand packages, so this is a filtered, recycling
-// list rather than a wall of text: pick a group, optionally type to narrow
-// it, and read `name  old → new`. A ListView (not a Repeater in a Column)
-// keeps a 1000-row update scrolling smoothly, since only visible delegates
-// are ever built.
+// One update can move thousands of packages, so this is a filtered, capped
+// list rather than a wall of text: pick a group, optionally type to narrow it,
+// and read `name  old → new`. The Repeater builds at most the visible policy
+// limit rather than laying out the complete update.
 Column {
   id: root
 

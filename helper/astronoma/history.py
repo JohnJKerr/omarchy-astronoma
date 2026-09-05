@@ -222,11 +222,6 @@ def unread_in(records: list[dict]) -> str | None:
     return newest if (not seen or newest > seen) else None
 
 
-def unread_id() -> str | None:
-    """The newest captured update the user has not opened yet, if any."""
-    return unread_in(all_records())
-
-
 def summary_row(record: dict) -> dict:
     """The compact shape the history list renders, without the payload."""
     packages = record.get("packages") or {}
