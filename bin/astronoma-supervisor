@@ -17,7 +17,7 @@ def main() -> int:
         code, stdout, stderr = run_bounded(
             [os.path.join(ROOT, "bin", "astronoma"), *sys.argv[1:]], os.getcwd(),
             timeout=timeout, stdout_limit=16 * 1024 * 1024,
-            stderr_limit=64 * 1024,
+            stderr_limit=64 * 1024, termination_grace=3,
         )
     except subprocess.TimeoutExpired:
         sys.stderr.write("Astronoma helper timed out\n")
@@ -25,6 +25,9 @@ def main() -> int:
     except ValueError:
         sys.stderr.write("Astronoma helper returned too much output\n")
         return 125
+    except OSError as error:
+        sys.stderr.write(f"Could not run Astronoma helper: {error}\n")
+        return 126
     sys.stdout.buffer.write(stdout)
     sys.stderr.buffer.write(stderr)
     return code

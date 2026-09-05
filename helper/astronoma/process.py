@@ -7,14 +7,14 @@ import subprocess
 import time
 
 
-def _stop_group(process: subprocess.Popen) -> None:
+def _stop_group(process: subprocess.Popen, grace: float) -> None:
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
     # The leader exiting does not mean its descendants exited. Give the
     # whole group a grace period, then kill survivors even if wait() succeeds.
-    deadline = time.monotonic() + 2
+    deadline = time.monotonic() + grace
     while time.monotonic() < deadline:
         process.poll()
         try:
@@ -31,7 +31,8 @@ def _stop_group(process: subprocess.Popen) -> None:
 
 def run_bounded(argv: list[str], workdir: str, timeout: float = 180,
                  stdout_limit: int = 256 * 1024,
-                 stderr_limit: int = 64 * 1024) -> tuple[int, bytes, bytes]:
+                 stderr_limit: int = 64 * 1024,
+                 termination_grace: float = 2) -> tuple[int, bytes, bytes]:
     """Drain bounded output while the producer runs, with a process-group deadline."""
     # QML's Process can leave stdin as an open pipe. Codex treats piped stdin
     # as additional prompt input even when a positional prompt was supplied,
@@ -40,20 +41,25 @@ def run_bounded(argv: list[str], workdir: str, timeout: float = 180,
     process = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                cwd=workdir, start_new_session=True)
+
     def cancelled(signum, _frame):
         raise SystemExit(128 + signum)
 
     previous_handlers = {}
-    for signum in (signal.SIGTERM, signal.SIGINT):
-        previous_handlers[signum] = signal.getsignal(signum)
-        signal.signal(signum, cancelled)
-    selector = selectors.DefaultSelector()
+    selector = None
     buffers = {process.stdout: bytearray(), process.stderr: bytearray()}
     limits = {process.stdout: stdout_limit, process.stderr: stderr_limit}
-    selector.register(process.stdout, selectors.EVENT_READ)
-    selector.register(process.stderr, selectors.EVENT_READ)
     deadline = time.monotonic() + timeout
     try:
+        # Install cleanup routing only after Popen succeeds, but inside the
+        # protected region: selector or signal setup can fail too.
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous = signal.getsignal(signum)
+            signal.signal(signum, cancelled)
+            previous_handlers[signum] = previous
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ)
+        selector.register(process.stderr, selectors.EVENT_READ)
         while selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -73,10 +79,29 @@ def run_bounded(argv: list[str], workdir: str, timeout: float = 180,
         return (process.wait(timeout=remaining), bytes(buffers[process.stdout]),
                 bytes(buffers[process.stderr]))
     finally:
-        _stop_group(process)
-        for signum, handler in previous_handlers.items():
-            signal.signal(signum, handler)
-        selector.close()
-        process.stdout.close()
-        process.stderr.close()
-
+        # A second cancellation during teardown must not interrupt TERM/KILL
+        # and leave the child tree orphaned. Restore the caller's handlers
+        # only after cleanup has completed.
+        for signum in previous_handlers:
+            try:
+                signal.signal(signum, signal.SIG_IGN)
+            except ValueError:
+                pass
+        if selector is not None:
+            try:
+                selector.close()
+            except OSError:
+                pass
+        for stream in (process.stdout, process.stderr):
+            try:
+                stream.close()
+            except OSError:
+                pass
+        try:
+            _stop_group(process, termination_grace)
+        finally:
+            for signum, handler in previous_handlers.items():
+                try:
+                    signal.signal(signum, handler)
+                except ValueError:
+                    pass

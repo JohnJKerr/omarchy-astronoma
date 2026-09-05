@@ -157,7 +157,9 @@ Item {
   BoundedProcess {
     id: summaryProcess
     maxStdoutChars: 512 * 1024
-    deadlineMs: 190000
+    // The helper's 190-second bound includes the agent's 180-second bound;
+    // leave another cleanup window before Quickshell stops the supervisor.
+    deadlineMs: 195000
     onFinished: function(exitCode, failure) {
       root.summaryRunning = false
       var payload = null

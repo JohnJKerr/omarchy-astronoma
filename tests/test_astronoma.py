@@ -840,6 +840,15 @@ class SecurityBoundaryTests(TempEnv):
                     workdir,
                 )
 
+    def test_stderr_is_stopped_at_its_independent_limit(self):
+        from astronoma import process
+        with tempfile.TemporaryDirectory() as workdir:
+            with self.assertRaises(ValueError):
+                process.run_bounded(
+                    [sys.executable, "-c", "import sys; sys.stderr.write('x' * 70000)"],
+                    workdir,
+                )
+
     def test_agent_deadline_survives_closed_output_pipes(self):
         from astronoma import process
         with tempfile.TemporaryDirectory() as workdir:
@@ -885,6 +894,71 @@ class SecurityBoundaryTests(TempEnv):
                         os.kill(int(pidfile.read_text()), signal.SIGKILL)
                     except ProcessLookupError:
                         pass
+
+    def test_outer_cancellation_reaches_a_nested_supervisor(self):
+        from astronoma import process
+        import signal
+
+        with tempfile.TemporaryDirectory() as workdir:
+            pidfile = Path(workdir) / "grandchild.pid"
+            grandchild = (
+                "import os,signal,time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "open('grandchild.pid', 'w').write(str(os.getpid())); time.sleep(30)"
+            )
+            helper_root = str(ROOT / "helper")
+            inner = (
+                "import sys; "
+                f"sys.path.insert(0, {helper_root!r}); "
+                "from astronoma.process import run_bounded; "
+                f"run_bounded([sys.executable, '-c', {grandchild!r}], '.', timeout=30)"
+            )
+            try:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    process.run_bounded(
+                        [sys.executable, "-c", inner], workdir, timeout=0.5,
+                        termination_grace=3,
+                    )
+                pid = int(pidfile.read_text())
+                self.assertTrue(self._process_gone(pid))
+            finally:
+                if pidfile.exists():
+                    try:
+                        os.kill(int(pidfile.read_text()), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
+    def _process_gone(self, pid):
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            status = Path(f"/proc/{pid}/stat")
+            if not status.exists() or status.read_text().split()[2] == "Z":
+                return True
+            time.sleep(0.01)
+        return False
+
+    def test_setup_failure_still_reaps_the_started_process(self):
+        from unittest import mock
+        from astronoma import process
+
+        started = []
+        real_popen = subprocess.Popen
+
+        def capture(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            started.append(child)
+            return child
+
+        with tempfile.TemporaryDirectory() as workdir:
+            with mock.patch.object(process.subprocess, "Popen", side_effect=capture), \
+                    mock.patch.object(process.selectors, "DefaultSelector",
+                                      side_effect=OSError("selector unavailable")):
+                with self.assertRaises(OSError):
+                    process.run_bounded(
+                        [sys.executable, "-c", "import time; time.sleep(30)"], workdir
+                    )
+        self.assertEqual(len(started), 1)
+        self.assertIsNotNone(started[0].poll())
 
     def test_agent_child_cannot_wait_on_the_shells_open_stdin(self):
         from astronoma import process
