@@ -98,7 +98,9 @@ def main(argv=None) -> int:
             # Capturing first is what makes a freshly finished update show up
             # the moment the panel is opened.
             capture_result = capture.run_if_changed()
-            capture_error = str(capture_result.get("error") or "")
+            capture_error = str(
+                capture_result.get("error") or capture_result.get("warning") or ""
+            )
         return _emit(
             report.build(refresh=args.refresh, notes_limit=args.notes_limit,
                          capture_error=capture_error), pretty

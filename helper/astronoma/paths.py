@@ -196,6 +196,27 @@ def list_regular(directory: Path, max_entries: int) -> list[str]:
         os.close(descriptor)
 
 
+def owned_regular_metadata(directory: Path, max_entries: int) -> list[tuple[str, os.stat_result]]:
+    """Return metadata from opened user-owned regular leaves in a trusted directory."""
+    descriptor = _open_directory(directory)
+    try:
+        result = []
+        for name in _bounded_names(descriptor, max_entries):
+            child = -1
+            try:
+                child = os.open(name, _FILE_FLAGS, dir_fd=descriptor)
+                info = os.fstat(child)
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                    raise PermissionError(f"untrusted regular-file entry: {directory / name}")
+                result.append((name, info))
+            finally:
+                if child >= 0:
+                    os.close(child)
+        return result
+    finally:
+        os.close(descriptor)
+
+
 def harden_private_tree(directory: Path, max_entries: int) -> None:
     descriptor = _open_directory(directory, create=True, private=True)
     try:

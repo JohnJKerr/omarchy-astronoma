@@ -252,6 +252,35 @@ class UpdateLogTests(unittest.TestCase):
 
 
 class CaptureTests(TempEnv):
+    def test_migration_markers_are_snapshotted_once_per_capture(self):
+        from unittest import mock
+        from astronoma import capture
+
+        with mock.patch.object(
+            capture.paths, "owned_regular_metadata",
+            wraps=capture.paths.owned_regular_metadata,
+        ) as metadata:
+            capture.run()
+        self.assertEqual(metadata.call_count, 1)
+
+    def test_unsafe_migration_tree_is_reported_without_losing_packages(self):
+        from unittest import mock
+        from astronoma import capture, history
+
+        real = self.migrations / "real"
+        real.write_text("done")
+        (self.migrations / "linked").symlink_to(real)
+        result = capture.run()
+        self.assertIn("Migration history", result["warning"])
+        self.assertIsNotNone(history.latest())
+
+        (self.migrations / "linked").unlink()
+        for name in ("one", "two"):
+            (self.migrations / name).write_text("done")
+        with mock.patch.object(capture, "MAX_MIGRATION_MARKERS", 1):
+            result = capture.run(force=True)
+        self.assertIn("entry limit", result["warning"])
+
     def test_capture_repairs_permissions_on_existing_state(self):
         from astronoma import capture
         self.state.mkdir(parents=True)

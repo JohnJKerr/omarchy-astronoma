@@ -13,32 +13,36 @@ useful history the first time Astronoma ever runs.
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from . import history, pacmanlog, paths, updatelog, versions
 
+MAX_MIGRATION_MARKERS = 4096
 
-def _migrations_between(start: datetime, end: datetime) -> list[str]:
+
+def _migration_markers() -> list[tuple[str, datetime]]:
+    directory = paths.migrations_state_dir()
+    try:
+        entries = paths.owned_regular_metadata(directory, MAX_MIGRATION_MARKERS)
+    except FileNotFoundError:
+        return []
+    return [
+        (Path(name).stem, datetime.fromtimestamp(info.st_mtime).astimezone())
+        for name, info in entries
+    ]
+
+
+def _migrations_between(markers: list[tuple[str, datetime]],
+                        start: datetime, end: datetime) -> list[str]:
     """Migration markers Omarchy touched inside this update's window.
 
     The marker's mtime is the only record that a migration ran at a
     particular time, and it is what makes migrations recoverable for
     updates whose transcript is long gone.
     """
-    directory = paths.migrations_state_dir()
-    try:
-        entries = list(directory.iterdir())
-    except OSError:
-        return []
     window_start = start - timedelta(minutes=5)
     window_end = end + timedelta(minutes=30)
-    found = []
-    for entry in entries:
-        try:
-            touched = datetime.fromtimestamp(entry.stat().st_mtime).astimezone()
-        except OSError:
-            continue
-        if window_start <= touched <= window_end:
-            found.append(entry.stem)
+    found = [name for name, touched in markers if window_start <= touched <= window_end]
     return sorted(found)
 
 
@@ -54,9 +58,10 @@ def _is_update(session: pacmanlog.Session) -> bool:
     return session.omarchy_delta() != (None, None)
 
 
-def _record_from(session: pacmanlog.Session, log: updatelog.UpdateLog | None) -> dict:
+def _record_from(session: pacmanlog.Session, log: updatelog.UpdateLog | None,
+                 migration_markers: list[tuple[str, datetime]]) -> dict:
     from_version, to_version = session.omarchy_delta()
-    migrations = _migrations_between(session.started, session.finished)
+    migrations = _migrations_between(migration_markers, session.started, session.finished)
     if log and log.migrations:
         # The transcript names exactly what ran; prefer it over mtimes.
         migrations = sorted(set(migrations) | set(log.migrations))
@@ -144,7 +149,7 @@ def run_if_changed() -> dict:
     if previous == signature and history.any_records():
         return {"captured": [], "skipped": [], "unchanged": True}
     result = run()
-    if not result.get("error"):
+    if not result.get("error") and not result.get("warning"):
         paths.atomic_json_write(stamp, signature, private=True)
     return result
 
@@ -169,6 +174,12 @@ def _run_locked(force: bool = False) -> dict:
             "error": str(error),
         }
     log = updatelog.load()
+    migration_warning = ""
+    try:
+        migration_markers = _migration_markers()
+    except (OSError, ValueError) as error:
+        migration_markers = []
+        migration_warning = f"Migration history was not read safely: {error}"
     records = history.all_records()
     known = set() if force else {
         str(digest) for record in records
@@ -207,7 +218,7 @@ def _run_locked(force: bool = False) -> dict:
                 skipped.append(identifier)
                 continue
 
-        rebuilt = _record_from(session, attached)
+        rebuilt = _record_from(session, attached, migration_markers)
         previous = existing_records.get(identifier)
         if previous and not attached and not previous.get("partial", True):
             # Package history is reproducible, but a vanished transcript is
@@ -218,10 +229,13 @@ def _run_locked(force: bool = False) -> dict:
         history.save(rebuilt)
         captured.append(identifier)
 
-    return {
+    result = {
         "captured": captured,
         "skipped": skipped,
         "sessions": len(sessions),
         "updateLogPresent": log.present,
         "updateLogAttached": owner is not None,
     }
+    if migration_warning:
+        result["warning"] = migration_warning[:200]
+    return result
