@@ -180,7 +180,7 @@ Item {
 
   function scrollDetail(amount) {
     var view = root.showingReleaseCatalogue
-      ? (root.showingEarlier ? earlierPage : futurePage) : detailFlick
+      ? root.cataloguePage() : detailFlick
     if (!view) return
     var maximum = Math.max(0, view.contentHeight - view.height)
     view.contentY = Math.max(0, Math.min(maximum, view.contentY + amount))
@@ -192,18 +192,22 @@ Item {
 
   function scrollDetailPage(direction) {
     var view = root.showingReleaseCatalogue
-      ? (root.showingEarlier ? earlierPage : futurePage) : detailFlick
+      ? root.cataloguePage() : detailFlick
     if (!view) return
     scrollDetail(direction * view.height)
   }
 
   function scrollDetailToEnd(end) {
     var view = root.showingReleaseCatalogue
-      ? (root.showingEarlier ? earlierPage : futurePage) : detailFlick
+      ? root.cataloguePage() : detailFlick
     if (!view) return
     view.contentY = end
       ? Math.max(0, view.contentHeight - view.height)
       : 0
+  }
+
+  function cataloguePage() {
+    return root.showingEarlier ? earlierPageLoader.item : futurePageLoader.item
   }
 
   function showPackages(group) {
@@ -522,13 +526,19 @@ Item {
                 root.igniteRocket()
                 root.showingEarlier = false
                 root.showingUpcoming = true
-                futurePage.contentY = 0
+                Qt.callLater(function() {
+                  var page = root.cataloguePage()
+                  if (page) page.contentY = 0
+                })
               }
               onEarlierActivated: {
                 root.igniteRocket()
                 root.showingUpcoming = false
                 root.showingEarlier = true
-                earlierPage.contentY = 0
+                Qt.callLater(function() {
+                  var page = root.cataloguePage()
+                  if (page) page.contentY = 0
+                })
               }
             }
           }
@@ -1091,39 +1101,45 @@ Item {
               }
             }
 
-            FutureReleases {
-              id: futurePage
-              visible: root.showingUpcoming
+            Loader {
+              id: futurePageLoader
               anchors.fill: parent
-              releases: service.upcomingReleases
-              installed: service.installed
-              versionUnknown: service.report && service.report.omarchy
-                ? service.report.omarchy.versionUnknown === true : false
-              isDev: service.report && service.report.omarchy
-                ? service.report.omarchy.isDev === true : false
-              loading: service.loading && !service.everLoaded
-              status: service.releaseStatus
-              foreground: root.foreground
-              dim: root.dim
-              faint: root.faint
-              fontFamily: root.fontFamily
-              onBack: root.showingUpcoming = false
+              active: root.showingUpcoming
+              visible: active
+              sourceComponent: FutureReleases {
+                releases: service.upcomingReleases
+                installed: service.installed
+                versionUnknown: service.report && service.report.omarchy
+                  ? service.report.omarchy.versionUnknown === true : false
+                isDev: service.report && service.report.omarchy
+                  ? service.report.omarchy.isDev === true : false
+                loading: service.loading && !service.everLoaded
+                status: service.releaseStatus
+                foreground: root.foreground
+                dim: root.dim
+                faint: root.faint
+                fontFamily: root.fontFamily
+                onBack: root.showingUpcoming = false
+              }
             }
 
-            FutureReleases {
-              id: earlierPage
-              visible: root.showingEarlier
+            Loader {
+              id: earlierPageLoader
               anchors.fill: parent
-              releases: service.earlierReleases
-              earlier: true
-              boundary: service.earliestRecorded
-              loading: service.loading && !service.everLoaded
-              status: service.releaseStatus
-              foreground: root.foreground
-              dim: root.dim
-              faint: root.faint
-              fontFamily: root.fontFamily
-              onBack: root.showingEarlier = false
+              active: root.showingEarlier
+              visible: active
+              sourceComponent: FutureReleases {
+                releases: service.earlierReleases
+                earlier: true
+                boundary: service.earliestRecorded
+                loading: service.loading && !service.everLoaded
+                status: service.releaseStatus
+                foreground: root.foreground
+                dim: root.dim
+                faint: root.faint
+                fontFamily: root.fontFamily
+                onBack: root.showingEarlier = false
+              }
             }
 
             // Cover only the main body while its matching payload is read.

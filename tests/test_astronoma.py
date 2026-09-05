@@ -1536,6 +1536,17 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("asynchronous: true", flightlog)
         self.assertIn('text: "Rendering release notes…"', flightlog)
 
+    def test_hidden_release_catalogues_are_not_instantiated(self):
+        root = Path(__file__).resolve().parents[1]
+        flightlog = (root / "Flightlog.qml").read_text()
+
+        self.assertIn("id: futurePageLoader", flightlog)
+        self.assertIn("active: root.showingUpcoming", flightlog)
+        self.assertIn("id: earlierPageLoader", flightlog)
+        self.assertIn("active: root.showingEarlier", flightlog)
+        self.assertNotIn("id: futurePage\n", flightlog)
+        self.assertNotIn("id: earlierPage\n", flightlog)
+
     def test_planet_selection_does_not_tear_down_detail_before_load_finishes(self):
         root = Path(__file__).resolve().parents[1]
         flightlog = (root / "Flightlog.qml").read_text()
