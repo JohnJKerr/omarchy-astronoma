@@ -1977,6 +1977,68 @@ class InstallationTests(unittest.TestCase):
             self.assertIn("Refusing to install", completed.stderr)
             self.assertTrue(script.exists())
 
+    def test_failed_staged_copy_preserves_previous_install(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            env = self._env(temporary)
+            installed = (Path(temporary) / "config" / "omarchy" / "plugins"
+                         / "io.github.johnjkerr.astronoma")
+            installed.mkdir(parents=True)
+            sentinel = installed / "previous"
+            sentinel.write_text("working")
+            failing_cp = Path(temporary) / "stub-bin" / "cp"
+            failing_cp.write_text("#!/bin/sh\nexit 23\n")
+            failing_cp.chmod(0o755)
+
+            completed = subprocess.run(
+                [root / "install.sh", "--no-enable"], cwd=root, env=env,
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertEqual(sentinel.read_text(), "working")
+            parent = installed.parent
+            self.assertEqual(list(parent.glob(".astronoma-install.*")), [])
+
+    def test_install_and_uninstall_reject_symlinked_plugin_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            env = self._env(temporary)
+            config = Path(temporary) / "config" / "omarchy"
+            outside = Path(temporary) / "outside"
+            outside.mkdir()
+            sentinel = outside / "sentinel"
+            sentinel.write_text("safe")
+            config.mkdir(parents=True)
+            (config / "plugins").symlink_to(outside, target_is_directory=True)
+
+            for script in ("install.sh", "uninstall.sh"):
+                completed = subprocess.run(
+                    [root / script, "--no-enable"] if script == "install.sh"
+                    else [root / script],
+                    cwd=root, env=env, capture_output=True, text=True,
+                )
+                self.assertNotEqual(completed.returncode, 0, script)
+                self.assertIn("unsafe plugin target", completed.stderr)
+                self.assertEqual(sentinel.read_text(), "safe")
+
+    def test_purge_rejects_broad_target_before_removing_plugin(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            env = self._env(temporary, ASTRONOMA_STATE_DIR="/")
+            installed = (Path(temporary) / "config" / "omarchy" / "plugins"
+                         / "io.github.johnjkerr.astronoma")
+            installed.mkdir(parents=True)
+            sentinel = installed / "still-installed"
+            sentinel.write_text("safe")
+
+            completed = subprocess.run(
+                [root / "uninstall.sh", "--purge"], cwd=root, env=env,
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("unsafe state purge target", completed.stderr)
+            self.assertEqual(sentinel.read_text(), "safe")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

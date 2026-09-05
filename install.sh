@@ -17,6 +17,7 @@ set -euo pipefail
 PLUGIN_ID="io.github.johnjkerr.astronoma"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
+TARGET_PARENT="$(dirname -- "$TARGET_DIR")"
 ENABLE=1
 MENU=0
 AGENT_SUMMARIES=0
@@ -47,6 +48,19 @@ command -v python3 >/dev/null || {
   exit 1
 }
 
+validate_target() {
+  local config_root target_real expected
+  config_root="$(realpath -m -- "${XDG_CONFIG_HOME:-$HOME/.config}")"
+  target_real="$(realpath -m -- "$TARGET_DIR")"
+  expected="$config_root/omarchy/plugins/$PLUGIN_ID"
+  if [[ $target_real != "$expected" || -L $TARGET_DIR ]]; then
+    echo "Refusing unsafe plugin target: $TARGET_DIR" >&2
+    exit 1
+  fi
+}
+
+validate_target
+
 # Running the installed copy of this script would otherwise remove its own
 # source tree before the copy begins, leaving a broken or empty plugin behind.
 if [[ $(realpath -m -- "$SOURCE_DIR") == $(realpath -m -- "$TARGET_DIR") ]]; then
@@ -56,9 +70,23 @@ if [[ $(realpath -m -- "$SOURCE_DIR") == $(realpath -m -- "$TARGET_DIR") ]]; the
 fi
 
 echo "Installing Astronoma to $TARGET_DIR"
-# A symlinked plugin does not hot-reload, so always install a real copy.
-rm -rf "$TARGET_DIR"
-mkdir -p "$TARGET_DIR"
+mkdir -p "$TARGET_PARENT"
+validate_target
+PYTHONPATH="$SOURCE_DIR/helper" python3 -c \
+  'import sys; from pathlib import Path; from astronoma import paths; paths.private_directory(Path(sys.argv[1]))' \
+  "$TARGET_PARENT"
+
+# Build and validate a complete sibling before replacing the installed copy.
+# A failed copy therefore leaves the previous working plugin untouched.
+STAGING_DIR="$(mktemp -d "$TARGET_PARENT/.astronoma-install.XXXXXXXX")"
+BACKUP_DIR=""
+cleanup_install() {
+  [[ -z $STAGING_DIR || ! -e $STAGING_DIR ]] || rm -rf -- "$STAGING_DIR"
+  if [[ -n $BACKUP_DIR && -e $BACKUP_DIR && ! -e $TARGET_DIR ]]; then
+    mv -- "$BACKUP_DIR" "$TARGET_DIR"
+  fi
+}
+trap cleanup_install EXIT
 # Every entry is spelled absolutely. A bare `./*.qml` here would glob against
 # whatever directory the user ran the script from, so installing from anywhere
 # but the checkout silently copied no QML at all and produced a plugin the
@@ -69,27 +97,41 @@ for entry in "$SOURCE_DIR"/manifest.json "$SOURCE_DIR"/README.md \
              "$SOURCE_DIR"/assets "$SOURCE_DIR"/bin "$SOURCE_DIR"/helper \
              "$SOURCE_DIR"/*.qml; do
   if [[ -e $entry ]]; then
-    cp -r "$entry" "$TARGET_DIR/"
+    cp -r -- "$entry" "$STAGING_DIR/"
   fi
 done
 # Bytecode from the developer's interpreter has no business in a plugin
 # directory the shell trusts, and a stale .pyc outlives the .py it came from.
-find "$TARGET_DIR" -name __pycache__ -type d -prune -exec rm -rf {} +
+find "$STAGING_DIR" -name __pycache__ -type d -prune -exec rm -rf {} +
 
 # A plugin missing its entry points installs and enables perfectly happily,
 # then fails to load with nothing but a line on the shell's console. Refuse
 # here instead, while there is still someone to tell.
 for required in manifest.json BarWidget.qml Flightlog.qml Model.js bin/astronoma; do
-  if [[ ! -f $TARGET_DIR/$required ]]; then
-    echo "Install is incomplete: $required did not make it to $TARGET_DIR" >&2
+  if [[ ! -f $STAGING_DIR/$required ]]; then
+    echo "Install is incomplete: $required did not make it to the staged copy" >&2
     exit 1
   fi
 done
-chmod +x "$TARGET_DIR/bin/astronoma" "$TARGET_DIR/bin/astronoma-supervisor" \
-         "$TARGET_DIR/bin/astronoma-menu-entry"
-if [[ -f $TARGET_DIR/uninstall.sh ]]; then
-  chmod +x "$TARGET_DIR/uninstall.sh"
+python3 -m json.tool "$STAGING_DIR/manifest.json" >/dev/null
+chmod +x "$STAGING_DIR/bin/astronoma" "$STAGING_DIR/bin/astronoma-supervisor" \
+         "$STAGING_DIR/bin/astronoma-menu-entry"
+if [[ -f $STAGING_DIR/uninstall.sh ]]; then
+  chmod +x "$STAGING_DIR/uninstall.sh"
 fi
+
+if [[ -e $TARGET_DIR ]]; then
+  BACKUP_DIR="$(mktemp -d "$TARGET_PARENT/.astronoma-backup.XXXXXXXX")"
+  rmdir -- "$BACKUP_DIR"
+  mv -- "$TARGET_DIR" "$BACKUP_DIR"
+fi
+mv -- "$STAGING_DIR" "$TARGET_DIR"
+STAGING_DIR=""
+if [[ -n $BACKUP_DIR ]]; then
+  rm -rf -- "$BACKUP_DIR"
+  BACKUP_DIR=""
+fi
+trap - EXIT
 
 if (( RESET_AGENT_SUMMARIES )); then
   "$TARGET_DIR/bin/astronoma" agent-summaries reset >/dev/null
