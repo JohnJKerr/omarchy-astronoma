@@ -6,12 +6,18 @@ the rest of Astronoma sorts and compares on, so a pacman version can be
 lined up against a release tag without either side caring.
 """
 
+import os
 import re
 import subprocess
+import time
 
 from . import paths
+from .process import run_bounded
 
 _PKG_CANDIDATES = ("omarchy-dev", "omarchy")
+DETECTION_TIMEOUT = 5
+MAX_VERSION_OUTPUT = 16 * 1024
+MAX_VERSION_CHARS = 128
 
 
 def is_dev_checkout() -> bool:
@@ -33,35 +39,45 @@ def installed() -> str | None:
     """
     if is_dev_checkout():
         return None
+    deadline = time.monotonic() + DETECTION_TIMEOUT
     for package in _PKG_CANDIDATES:
-        version = _pacman_version(package)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        version = _pacman_version(package, remaining)
         if version:
             return version
     return _version_file()
 
 
-def _pacman_version(package: str) -> str | None:
+def _pacman_version(package: str, timeout: float = DETECTION_TIMEOUT) -> str | None:
     try:
-        out = subprocess.run(
+        returncode, stdout, _stderr = run_bounded(
             ["pacman", "-Q", package],
-            capture_output=True,
-            text=True,
-            timeout=10,
+            os.getcwd(), timeout=timeout,
+            stdout_limit=MAX_VERSION_OUTPUT, stderr_limit=MAX_VERSION_OUTPUT,
+            termination_grace=0.2,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):
         return None
-    if out.returncode != 0:
+    if returncode != 0:
         return None
-    parts = out.stdout.split()
-    return parts[1] if len(parts) >= 2 else None
+    parts = stdout.decode("utf-8", errors="replace").split()
+    if len(parts) != 2 or parts[0] != package or len(parts[1]) > MAX_VERSION_CHARS:
+        return None
+    return parts[1]
 
 
 def _version_file() -> str | None:
     try:
-        text = (paths.omarchy_path() / "version").read_text().strip()
-    except OSError:
+        raw = paths.read_trusted_leaf(
+            paths.omarchy_path() / "version", MAX_VERSION_OUTPUT,
+            (0, os.geteuid()),
+        )
+        text = raw.decode("utf-8").strip()
+    except (OSError, ValueError, UnicodeError):
         return None
-    return text or None
+    return text if 0 < len(text) <= MAX_VERSION_CHARS else None
 
 
 def strip_pkgrel(version: str) -> str:

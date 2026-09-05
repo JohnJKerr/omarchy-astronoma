@@ -144,6 +144,29 @@ def read_bytes(target: Path, max_bytes: int, private: bool = True) -> bytes:
         os.close(parent)
 
 
+def read_trusted_leaf(target: Path, max_bytes: int,
+                      allowed_owners: tuple[int, ...]) -> bytes:
+    """Read one bounded regular leaf without following it."""
+    descriptor = os.open(target, _FILE_FLAGS)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid not in allowed_owners:
+            raise PermissionError(f"untrusted regular file: {target}")
+        if info.st_size > max_bytes:
+            raise ValueError(f"file exceeds {max_bytes} byte limit")
+        chunks, total = [], 0
+        while True:
+            chunk = os.read(descriptor, min(65536, max_bytes + 1 - total))
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError(f"file exceeds {max_bytes} byte limit")
+    finally:
+        os.close(descriptor)
+
+
 def read_json(target: Path, max_bytes: int, private: bool = True):
     return json.loads(read_bytes(target, max_bytes, private).decode("utf-8"))
 

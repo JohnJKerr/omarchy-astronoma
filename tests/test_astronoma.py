@@ -92,6 +92,44 @@ class TempEnv(unittest.TestCase):
 
 
 class VersionTests(unittest.TestCase):
+    def test_pacman_version_output_and_timeout_are_bounded(self):
+        from unittest import mock
+        from astronoma import versions
+
+        with mock.patch.object(versions, "run_bounded",
+                               return_value=(0, b"omarchy 4.0.1-1\n", b"")) as run:
+            self.assertEqual(versions._pacman_version("omarchy"), "4.0.1-1")
+            self.assertEqual(run.call_args.kwargs["stdout_limit"], 16 * 1024)
+            self.assertEqual(run.call_args.kwargs["stderr_limit"], 16 * 1024)
+
+        with mock.patch.object(versions, "run_bounded", side_effect=ValueError("flood")):
+            self.assertIsNone(versions._pacman_version("omarchy"))
+        with mock.patch.object(versions, "run_bounded",
+                               return_value=(0, b"other 4.0.1-1 extra", b"")):
+            self.assertIsNone(versions._pacman_version("omarchy"))
+
+    def test_version_file_rejects_symlink_fifo_invalid_utf8_and_oversize(self):
+        from unittest import mock
+        from astronoma import versions
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            version = root / "version"
+            target = root / "target"
+            target.write_text("4.0.1")
+            version.symlink_to(target)
+            with mock.patch.object(versions.paths, "omarchy_path", return_value=root):
+                self.assertIsNone(versions._version_file())
+                version.unlink()
+                os.mkfifo(version)
+                self.assertIsNone(versions._version_file())
+                version.unlink()
+                version.write_bytes(b"\xff")
+                self.assertIsNone(versions._version_file())
+                version.write_bytes(b"x" * 17)
+                with mock.patch.object(versions, "MAX_VERSION_OUTPUT", 16):
+                    self.assertIsNone(versions._version_file())
+
     def test_pkgrel_stripped_but_prerelease_kept(self):
         from astronoma import versions
         self.assertEqual(versions.strip_pkgrel("1:1.94.117-1"), "1.94.117")
