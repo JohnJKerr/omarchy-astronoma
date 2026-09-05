@@ -116,25 +116,26 @@ whose machine was updated. Omarchy is an opinionated Arch/Hyprland desktop.
 
 Answer only this: what actually changed for me, and does any of it matter?
 
-Write for someone who will use this desktop in the next ten minutes. Lead \
-with what they will notice or must act on. Be specific and concrete; skip \
-anything that reads like a generic changelog.
-
-Cover, only where the data below supports it:
-- What the user will actually notice day to day
-- New user-facing features worth trying
-- Changed keybindings, Hyprland behaviour, shell/bar behaviour, or defaults
-- Anything likely to affect an existing config or workflow
-- Anything requiring manual action
-- Package changes that matter to normal desktop usage
+Write for someone who will use this desktop in the next ten minutes. Explain \
+the practical difference between their system before and after this update, \
+then select only the few other changes worth knowing about.
 
 Rules:
 - Ground every claim in the data below. Do not invent releases or features.
-- If something needs manual action, say so first and plainly.
-- Skip routine dependency bumps unless they change behaviour.
-- Use short markdown bullets under a few bold headings. No preamble, no \
-closing summary, no restating this brief.
-- Aim for 200-350 words.
+- Use exactly two headings: **What this means for you** and **Other highlights**.
+- Under **What this means for you**, give one to three short bullets about the \
+impact of this update relative to the previous system. Put required manual \
+action first and say exactly what to do. If there is no meaningful impact, \
+write one bullet: "No action needed; your usual workflow should be unchanged."
+- Under **Other highlights**, give at most four short bullets for noticeable \
+behaviour, useful new features, changed defaults or workflows, and package \
+changes with a real user-facing effect. If there are none, write one bullet: \
+"Nothing else notable."
+- Omit routine upgrades, implementation detail, and anything that does not \
+meaningfully affect the user.
+- Use one short markdown bullet per point. No preamble, closing summary, or \
+repetition.
+- Keep the whole answer under 160 words.
 """
 
 

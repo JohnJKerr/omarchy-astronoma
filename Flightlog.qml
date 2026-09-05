@@ -781,7 +781,7 @@ Item {
                   PanelSeparator { foreground: root.foreground }
 
                   PanelSectionHeader {
-                    text: "WHAT THIS MEANS FOR YOU"
+                    text: "YOUR PERSONALISED SUMMARY"
                     foreground: root.foreground
                     fontFamily: root.fontFamily
                   }

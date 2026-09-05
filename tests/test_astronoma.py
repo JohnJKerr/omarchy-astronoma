@@ -600,6 +600,29 @@ class AgentTests(TempEnv):
         self.assertIn("Release body here", prompt)
         self.assertIn("quickshell", prompt)
 
+    def test_prompt_requests_brief_personal_impact_and_other_highlights(self):
+        from astronoma import agent
+        prompt = agent.build_prompt(
+            {"id": "2026-08-28-2300", "omarchy": {"to": "4.0.1"}},
+            [],
+        )
+        self.assertIn("exactly two headings", prompt)
+        self.assertIn("**What this means for you**", prompt)
+        self.assertIn("**Other highlights**", prompt)
+        self.assertIn("relative to the previous system", prompt)
+        self.assertIn("one to three short bullets", prompt)
+        self.assertIn("at most four short bullets", prompt)
+        self.assertIn("under 160 words", prompt)
+        self.assertIn("No action needed; your usual workflow should be unchanged.", prompt)
+        self.assertIn("Nothing else notable.", prompt)
+        self.assertNotIn("Aim for 200-350 words", prompt)
+        self.assertNotIn("under 100 words", prompt)
+
+    def test_flight_log_labels_agent_output_as_a_personalised_summary(self):
+        flightlog = (ROOT / "Flightlog.qml").read_text()
+        self.assertIn('text: "YOUR PERSONALISED SUMMARY"', flightlog)
+        self.assertNotIn('text: "WHAT THIS MEANS FOR YOU"', flightlog)
+
     def test_prompt_names_aur_packages_and_a_skipped_aur(self):
         from astronoma import agent
         prompt = agent.build_prompt(
