@@ -30,6 +30,11 @@ _SECTION = re.compile(
     r"|Update mise|Remove orphan packages|Update keyring)\s*$"
 )
 MAX_LOG_BYTES = 32 * 1024 * 1024
+MAX_LINE_CHARS = 65536
+MAX_MIGRATIONS = 1000
+MAX_MESSAGES = 1000
+MAX_PACKAGES_PER_ACTION = 5000
+MAX_NAME_CHARS = 1024
 
 _ERROR_HINTS = (
     "error:", "error!", "failed to", "failure", "cannot ", "unable to",
@@ -89,19 +94,35 @@ def _classify(line: str) -> str | None:
 
 def parse(text: str) -> UpdateLog:
     result = UpdateLog(present=True)
+    seen_migrations: set[str] = set()
     seen_errors: set[str] = set()
     seen_warnings: set[str] = set()
+    seen_packages = {
+        "upgraded": set(), "installed": set(), "removed": set(),
+    }
+
+    def append_unique(bucket, seen, value, max_items, max_chars, label):
+        if len(value) > max_chars:
+            raise ValueError(f"update transcript {label} exceeds the string limit")
+        if value in seen:
+            return
+        if len(bucket) >= max_items:
+            raise ValueError(f"update transcript contains too many {label}")
+        seen.add(value)
+        bucket.append(value)
 
     for raw in strip_ansi(text).split("\n"):
         line = raw.strip()
         if not line:
             continue
+        if len(line) > MAX_LINE_CHARS:
+            raise ValueError("update transcript contains an overlong line")
 
         migration = _MIGRATION.match(line)
         if migration:
             name = migration.group("name")
-            if name not in result.migrations:
-                result.migrations.append(name)
+            append_unique(result.migrations, seen_migrations, name,
+                          MAX_MIGRATIONS, MAX_NAME_CHARS, "migrations")
             continue
 
         # A step heading is structure, not content. Skipped explicitly so it
@@ -109,16 +130,16 @@ def parse(text: str) -> UpdateLog:
         if _SECTION.match(line):
             continue
 
-        for pattern, bucket in (
-            (_UPGRADING, result.upgraded),
-            (_INSTALLING, result.installed),
-            (_REMOVING, result.removed),
+        for pattern, bucket, seen in (
+            (_UPGRADING, result.upgraded, seen_packages["upgraded"]),
+            (_INSTALLING, result.installed, seen_packages["installed"]),
+            (_REMOVING, result.removed, seen_packages["removed"]),
         ):
             match = pattern.match(line)
             if match:
                 name = match.group("name")
-                if name not in bucket:
-                    bucket.append(name)
+                append_unique(bucket, seen, name,
+                              MAX_PACKAGES_PER_ACTION, MAX_NAME_CHARS, "packages")
                 break
         else:
             if "AUR is unavailable" in line:
@@ -126,12 +147,12 @@ def parse(text: str) -> UpdateLog:
             if "Something went wrong during the update" in line:
                 result.failed = True
             kind = _classify(line)
-            if kind == "error" and line not in seen_errors:
-                seen_errors.add(line)
-                result.errors.append(line)
-            elif kind == "warning" and line not in seen_warnings:
-                seen_warnings.add(line)
-                result.warnings.append(line)
+            if kind == "error":
+                append_unique(result.errors, seen_errors, line,
+                              MAX_MESSAGES, MAX_LINE_CHARS, "errors")
+            elif kind == "warning":
+                append_unique(result.warnings, seen_warnings, line,
+                              MAX_MESSAGES, MAX_LINE_CHARS, "warnings")
 
     return result
 
@@ -173,7 +194,10 @@ def load(path=None) -> UpdateLog:
     finally:
         if descriptor >= 0:
             os.close(descriptor)
-    result = parse(raw.decode("utf-8", errors="replace"))
+    try:
+        result = parse(raw.decode("utf-8", errors="replace"))
+    except ValueError as error:
+        return UpdateLog(present=False, error=str(error))
     result.modified = modified
     result.source_signature = [info.st_dev, info.st_ino, len(raw), info.st_mtime_ns]
     # Identifies this exact transcript so the same run is never captured

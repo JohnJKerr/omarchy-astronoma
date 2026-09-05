@@ -250,6 +250,31 @@ class PacmanLogTests(TempEnv):
 
 
 class UpdateLogTests(unittest.TestCase):
+    def test_parser_preserves_first_seen_order_with_constant_time_deduplication(self):
+        from astronoma import updatelog
+
+        parsed = updatelog.parse(
+            "Running migration (first)\nRunning migration (second)\n"
+            "Running migration (first)\nwarning: first\nwarning: second\nwarning: first\n"
+            "installing alpha...\ninstalling beta...\ninstalling alpha...\n"
+        )
+        self.assertEqual(parsed.migrations, ["first", "second"])
+        self.assertEqual(parsed.warnings, ["warning: first", "warning: second"])
+        self.assertEqual(parsed.installed, ["alpha", "beta"])
+
+    def test_parser_rejects_values_beyond_persisted_record_limits(self):
+        from unittest import mock
+        from astronoma import updatelog
+
+        with mock.patch.object(updatelog, "MAX_LINE_CHARS", 8):
+            with self.assertRaisesRegex(ValueError, "overlong line"):
+                updatelog.parse("warning: too long")
+        with mock.patch.object(updatelog, "MAX_MESSAGES", 1):
+            with self.assertRaisesRegex(ValueError, "too many warnings"):
+                updatelog.parse("warning: one\nwarning: two")
+        with mock.patch.object(updatelog, "MAX_PACKAGES_PER_ACTION", 1):
+            with self.assertRaisesRegex(ValueError, "too many packages"):
+                updatelog.parse("installing one...\ninstalling two...")
     def test_ansi_and_carriage_returns_are_flattened(self):
         from astronoma import updatelog
         raw = "\x1b[32mhello\x1b[0m\r\nprogress 1\rprogress 2\rdone\r\n"
