@@ -1178,6 +1178,13 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("text: detailService.detailError", flightlog)
         self.assertIn("textFormat: Text.PlainText", flightlog)
 
+    def test_machine_and_provider_text_are_rendered_as_plain_text(self):
+        flightlog = (ROOT / "Flightlog.qml").read_text()
+        installed = flightlog.index('var suffix = service.installed')
+        provider = flightlog.index('text: "Running "')
+        self.assertIn("textFormat: Text.PlainText", flightlog[installed:installed + 300])
+        self.assertIn("textFormat: Text.PlainText", flightlog[provider:provider + 400])
+
     def test_json_reader_rejects_depth_invalid_utf8_and_nan(self):
         from astronoma import paths
 

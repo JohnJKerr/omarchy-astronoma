@@ -507,6 +507,7 @@ Item {
                   var suffix = service.installed ? " · Omarchy " + service.installed : ""
                   return "The flight log" + suffix
                 }
+                textFormat: Text.PlainText
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -1016,6 +1017,7 @@ Item {
                     text: "Running "
                       + (service.agents.find(function(item) { return item.key === root.chosenAgentKey }) || {name: "the agent"}).name
                       + " over this update. This can take a minute."
+                    textFormat: Text.PlainText
                     color: root.faint
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
