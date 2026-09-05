@@ -36,8 +36,8 @@ Panel {
   // "unread" is the quieter option: the rocket appears when an update lands
   // and stands down once it has been read.
   readonly property bool shouldShow: {
-    if (!service.everLoaded) return false
     if (visibility === "always") return true
+    if (!service.everLoaded) return false
     return service.hasUnread
   }
 
@@ -211,10 +211,21 @@ Panel {
             }
           }
 
+          Text {
+            visible: service.lastError !== ""
+            width: parent.width
+            text: service.lastError + ". Press R to retry."
+            textFormat: Text.PlainText
+            color: Color.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
           // Nothing captured yet: say so plainly, and let the recent
           // releases below carry the panel.
           Text {
-            visible: !root.latest
+            visible: !root.latest && service.lastError === ""
             width: parent.width
             text: service.everLoaded
               ? "No update has been captured on this machine yet. Here is what changed in Omarchy recently."

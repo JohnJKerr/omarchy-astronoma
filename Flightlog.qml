@@ -677,6 +677,17 @@ Item {
                 width: detailFlick.width - Style.space(10)
                 spacing: Style.space(14)
 
+                Text {
+                  visible: service.lastError !== ""
+                  width: parent.width
+                  text: service.lastError + ". Press R to retry."
+                  textFormat: Text.PlainText
+                  color: Color.urgent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  wrapMode: Text.WordWrap
+                }
+
                 // -------------------------------------- headline
                 Column {
                   width: parent.width
@@ -705,7 +716,7 @@ Item {
                   }
 
                   Text {
-                    visible: !root.record
+                    visible: !root.record && service.lastError === ""
                     width: parent.width
                     text: service.everLoaded
                       ? "Astronoma has not captured an update on this machine yet. It will record the next one automatically — here is what changed in Omarchy recently."
