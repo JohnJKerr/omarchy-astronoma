@@ -897,7 +897,14 @@ class AgentTests(TempEnv):
         # Gemini's non-interactive mode only gates tools that ask for
         # approval; read-only ones, web_fetch included, run unprompted.
         self.assertNotIn("gemini", commands)
-        self.assertEqual(commands["claude"], ("-p",))
+        claude = commands["claude"]
+        self.assertIn("--safe-mode", claude)
+        self.assertIn("--restricted", claude)
+        self.assertEqual(claude[claude.index("--tools") + 1], "")
+        self.assertEqual(claude[claude.index("--permission-prompts") + 1], "none")
+        self.assertIn("--strict-mcp-config", claude)
+        self.assertIn("--disable-slash-commands", claude)
+        self.assertIn("--no-session-persistence", claude)
         codex = commands["codex"]
         self.assertIn("--strict-config", codex)
         self.assertIn("--ignore-user-config", codex)
@@ -918,6 +925,20 @@ class AgentTests(TempEnv):
         self.assertEqual(record_path.stat().st_mode & 0o777, 0o600)
         self.assertEqual(self.state.stat().st_mode & 0o777, 0o700)
         self.assertEqual((self.state / "summaries" / "2026-08-28-2300.json").stat().st_mode & 0o777, 0o600)
+
+    def test_changed_evidence_invalidates_a_cached_summary(self):
+        from astronoma import agent, capture, history
+        capture.run()
+        identifier = "2026-08-28-2300"
+        record = history.load(identifier)
+        digest = agent.evidence_hash(record, [])
+        agent.save_summary(identifier, {
+            "ok": True, "id": identifier, "agent": "test", "agentName": "Test",
+            "evidenceHash": digest, "generatedAt": 1, "text": "old answer",
+        })
+        self.assertIsNotNone(agent.cached_summary(identifier, digest))
+        record["warnings"].append("new evidence")
+        self.assertIsNone(agent.cached_summary(identifier, agent.evidence_hash(record, [])))
     def test_summarise_without_agent_reports_cleanly(self):
         from astronoma import agent, capture
         capture.run()

@@ -267,6 +267,7 @@ function validSummary(value) {
   return value === null || value === undefined || (isObject(value) && value.ok === true
     && boundedText(value.id, 32, false) && boundedText(value.agent, 32, false)
     && boundedText(value.agentName, 80, false)
+    && typeof value.evidenceHash === "string" && /^[0-9a-f]{64}$/.test(value.evidenceHash)
     && boundedText(value.text, 131072, false))
 }
 

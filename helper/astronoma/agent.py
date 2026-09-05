@@ -8,6 +8,7 @@ The feature is optional: discovering no supported agent leaves every other
 view available.
 """
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -39,7 +40,16 @@ class Agent:
 
 
 AGENTS = (
-    Agent("claude", "Claude Code", "claude", ("-p",)),
+    Agent("claude", "Claude Code", "claude", (
+        "-p",
+        "--safe-mode",
+        "--restricted",
+        "--tools", "",
+        "--permission-prompts", "none",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--no-session-persistence",
+    )),
     Agent("codex", "Codex", "codex", (
         "exec",
         "--strict-config",
@@ -347,7 +357,12 @@ def _summary_path(identifier: str):
     return paths.summaries_dir() / f"{identifier}.json"
 
 
-def cached_summary(identifier: str) -> dict | None:
+def evidence_hash(record: dict, releases: list) -> str:
+    """Identify the exact bounded evidence sent for a summary."""
+    return hashlib.sha256(build_prompt(record, releases).encode("utf-8")).hexdigest()
+
+
+def cached_summary(identifier: str, expected_evidence: str | None = None) -> dict | None:
     try:
         data = paths.read_json(_summary_path(identifier), MAX_SUMMARY_BYTES)
     except (OSError, ValueError):
@@ -356,10 +371,14 @@ def cached_summary(identifier: str) -> dict | None:
              and data.get("id") == identifier
              and isinstance(data.get("agent"), str) and len(data["agent"]) <= 32
              and isinstance(data.get("agentName"), str) and len(data["agentName"]) <= 80
+             and isinstance(data.get("evidenceHash"), str)
+             and re.fullmatch(r"[0-9a-f]{64}", data["evidenceHash"]) is not None
+             and (expected_evidence is None or data["evidenceHash"] == expected_evidence)
              and type(data.get("generatedAt")) is int and data["generatedAt"] >= 0
              and isinstance(data.get("text"), str)
              and len(data["text"].encode("utf-8")) <= MAX_SUMMARY_TEXT_BYTES
-             and set(data) <= {"ok", "id", "agent", "agentName", "generatedAt", "text"})
+             and set(data) <= {"ok", "id", "agent", "agentName", "evidenceHash",
+                               "generatedAt", "text"})
     return data if valid else None
 
 
@@ -379,25 +398,22 @@ def summarise(identifier: str, releases: list, key: str | None = None,
     A summary costs real time and tokens, so it is only produced on
     request and is reused until the caller explicitly asks for a refresh.
     """
-    if not refresh:
-        cached = cached_summary(identifier)
-        if cached and cached.get("text"):
-            return {**cached, "cached": True}
-
     record = history.load(identifier)
     if not record:
         return {"ok": False, "error": f"No captured update {identifier}"}
+
+    prompt = build_prompt(record, releases)
+    prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    if not refresh:
+        cached = cached_summary(identifier, prompt_hash)
+        if cached and cached.get("text"):
+            return {**cached, "cached": True}
 
     chosen = resolve(key)
     if not chosen:
         return {"ok": False, "error": "No supported agent CLI is installed"}
 
-    prompt = build_prompt(record, releases)
     argv = [chosen.command, *chosen.argv, prompt]
-    if chosen.key == "claude":
-        # This option accepts a list, so it must follow the positional prompt
-        # or the prompt itself is consumed as another tool pattern.
-        argv.extend(["--disallowedTools", "*"])
     try:
         # An empty working directory prevents project instruction/config files
         # from being discovered. Claude's tools are explicitly disallowed;
@@ -425,6 +441,7 @@ def summarise(identifier: str, releases: list, key: str | None = None,
         "id": identifier,
         "agent": chosen.key,
         "agentName": chosen.name,
+        "evidenceHash": prompt_hash,
         "generatedAt": int(time.time()),
         "text": text,
     }

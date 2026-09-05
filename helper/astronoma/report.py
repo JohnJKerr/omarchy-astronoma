@@ -112,7 +112,10 @@ def build(refresh: bool = False, notes_limit: int | None = None,
         payload["latest"] = {
             **latest,
             "crossed": trim(_release_dicts(crossed)),
-            "summary": agent.cached_summary(str(latest.get("id") or "")),
+            "summary": agent.cached_summary(
+                str(latest.get("id") or ""),
+                agent.evidence_hash(latest, _release_dicts(crossed)),
+            ),
         }
 
     return payload
@@ -131,7 +134,9 @@ def detail(identifier: str, refresh: bool = False) -> dict:
         **record,
         "crossed": _release_dicts(crossed),
         "releaseStatus": status,
-        "summary": agent.cached_summary(identifier),
+        "summary": agent.cached_summary(
+            identifier, agent.evidence_hash(record, _release_dicts(crossed))
+        ),
         "agents": agent.available(),
         "selectedAgent": agent.selected(),
         "agentSelectionMissing": agent.preferred_key() is not None and agent.selected() is None,
