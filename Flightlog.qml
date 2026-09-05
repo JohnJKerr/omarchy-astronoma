@@ -20,6 +20,7 @@ Item {
   property bool opened: false
   property int selectedIndex: 0
   property int selectedReleaseIndex: 0
+  property bool refreshDetailOnReport: false
   property string summaryError: ""
   property bool confirmingAgentEnable: false
   property bool choosingAgent: false
@@ -63,9 +64,36 @@ Item {
     root.showingUpcoming = false
     root.showingEarlier = false
     root.summaryError = ""
-    service.refresh(true)
+    root.refresh()
     if (!root.hasRows) root.selectedIndex = 0
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function refresh() {
+    refreshDetailOnReport = true
+    service.refresh(true)
+  }
+
+  function reconcileSelection() {
+    var refreshDetail = refreshDetailOnReport
+    refreshDetailOnReport = false
+    if (!hasRows) {
+      selectedIndex = 0
+      detailService.clear()
+      return
+    }
+    // A request may still be running for a newly selected row. Its identity
+    // takes precedence over the previous detail still displayed underneath.
+    var id = detailService.requestedId || detailService.loadedId
+    var index = rows.findIndex(function(row) { return String(row.id) === id })
+    selectedIndex = index >= 0 ? index : 0
+    var landed = rows[selectedIndex].omarchy && rows[selectedIndex].omarchy.to
+      ? String(rows[selectedIndex].omarchy.to) : ""
+    var releaseIndex = releaseIndexForVersion(landed)
+    if (releaseIndex >= 0) selectedReleaseIndex = releaseIndex
+    if (index < 0) detailService.clear()
+    if (opened && (refreshDetail || !detailService.record || index < 0))
+      detailService.load(rows[selectedIndex].id)
   }
 
   function close() {
@@ -212,7 +240,7 @@ Item {
       // Reading the list is what marks the newest update read, matching
       // the bar widget's card.
       if (root.opened && service.hasUnread) service.markSeen(service.unreadId)
-      if (root.opened && root.hasRows && !detailService.record) root.select(root.selectedIndex)
+      root.reconcileSelection()
     }
   }
 
@@ -232,6 +260,13 @@ Item {
     property string requestedId: ""
     property string activeId: ""
 
+    function clear() {
+      requestedId = ""
+      loadedId = ""
+      record = null
+      loading = false
+    }
+
     function load(id) {
       if (!id) return
       requestedId = String(id)
@@ -250,9 +285,8 @@ Item {
     BoundedProcess {
       id: detailProcess
       onFinished: function(exitCode, failure) {
-        if (failure) detailService.record = null
-        else if (detailService.activeId === detailService.requestedId) {
-          if (exitCode !== 0) detailService.record = null
+        if (detailService.activeId === detailService.requestedId) {
+          if (failure || exitCode !== 0) detailService.record = null
           else try {
             var parsed = JSON.parse(detailProcess.stdoutText)
             detailService.record = parsed && parsed.ok ? parsed : null
@@ -261,7 +295,7 @@ Item {
             detailService.record = null
           }
         }
-        if (detailService.requestedId !== detailService.activeId)
+        if (detailService.requestedId && detailService.requestedId !== detailService.activeId)
           Qt.callLater(function() { detailService.load(detailService.requestedId) })
         else detailService.loading = false
       }
@@ -285,7 +319,7 @@ Item {
     function open(): void { root.open("{}") }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
-    function refresh(): string { service.refresh(true); return "ok" }
+    function refresh(): string { root.refresh(); return "ok" }
   }
 
   PanelWindow {
@@ -350,7 +384,7 @@ Item {
           }
           else if (event.key === Qt.Key_Home) { root.scrollDetailToEnd(false); event.accepted = true }
           else if (event.key === Qt.Key_End) { root.scrollDetailToEnd(true); event.accepted = true }
-          else if (event.key === Qt.Key_R) { service.refresh(true); event.accepted = true }
+          else if (event.key === Qt.Key_R) { root.refresh(); event.accepted = true }
           else if (!root.showingReleaseCatalogue && event.key === Qt.Key_P) { root.showPackages(packageSection.group); event.accepted = true }
           // Summarising deliberately has no single-key shortcut. This surface
           // takes exclusive keyboard focus, so one stray key would otherwise
