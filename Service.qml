@@ -43,7 +43,8 @@ Item {
   readonly property bool agentSelectionMissing: report && report.agentSelectionMissing === true
   readonly property bool agentSummariesEnabled: report && report.agentSummariesEnabled === true
   readonly property string captureError: report ? String(report.captureError || "") : ""
-  readonly property string problem: lastError || captureError
+  readonly property string historyError: report ? String(report.historyError || "") : ""
+  readonly property string problem: lastError || captureError || historyError
   readonly property string installed: report && report.omarchy ? (report.omarchy.installed || "") : ""
   readonly property string unreadId: report && report.unread ? String(report.unread) : ""
   readonly property bool hasUnread: unreadId !== ""

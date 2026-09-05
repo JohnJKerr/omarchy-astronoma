@@ -205,8 +205,8 @@ def _json_depth_within(raw: bytes, max_depth: int) -> bool:
     return True
 
 
-def read_json(target: Path, max_bytes: int, private: bool = True,
-              max_depth: int = 8):
+def read_json_with_size(target: Path, max_bytes: int, private: bool = True,
+                        max_depth: int = 8):
     raw = read_bytes(target, max_bytes, private)
     if not _json_depth_within(raw, max_depth):
         raise ValueError(f"JSON exceeds {max_depth} level depth limit")
@@ -215,9 +215,15 @@ def read_json(target: Path, max_bytes: int, private: bool = True,
         raise ValueError(f"invalid JSON numeric constant: {value}")
 
     try:
-        return json.loads(raw.decode("utf-8"), parse_constant=reject_constant)
+        return json.loads(raw.decode("utf-8"), parse_constant=reject_constant), len(raw)
     except (UnicodeError, RecursionError, json.JSONDecodeError) as error:
         raise ValueError("invalid JSON") from error
+
+
+def read_json(target: Path, max_bytes: int, private: bool = True,
+              max_depth: int = 8):
+    payload, _size = read_json_with_size(target, max_bytes, private, max_depth)
+    return payload
 
 
 def json_within_limits(value, max_items: int, max_string: int, max_depth: int = 8) -> bool:

@@ -50,7 +50,7 @@ def build(refresh: bool = False, notes_limit: int | None = None,
     installed = versions.strip_pkgrel(installed_raw) if installed_raw else None
 
     catalogue, status = releases_mod.load(refresh=refresh)
-    records = history.all_records()
+    records, history_truncated = history.all_records_with_status()
     latest = records[0] if records else None
     earliest = _earliest_recorded_version(records)
 
@@ -101,6 +101,8 @@ def build(refresh: bool = False, notes_limit: int | None = None,
         "agentSelectionMissing": agent.preferred_key() is not None and agent.selected() is None,
         "agentSummariesEnabled": agent.enabled(),
         "captureError": str(capture_error or "")[:200],
+        "historyError": ("Older update history exceeds the read limit"
+                         if history_truncated else ""),
         "latest": None,
     }
 

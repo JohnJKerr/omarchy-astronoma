@@ -14,10 +14,20 @@ MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 
 
 def _emit(payload, pretty: bool) -> int:
-    encoded = (json.dumps(payload, indent=2 if pretty else None) + "\n").encode("utf-8")
-    if len(encoded) > MAX_OUTPUT_BYTES:
+    encoder = json.JSONEncoder(indent=2 if pretty else None)
+    chunks, total = [], 0
+    for piece in encoder.iterencode(payload):
+        encoded_piece = piece.encode("utf-8")
+        total += len(encoded_piece)
+        if total + 1 > MAX_OUTPUT_BYTES:
+            chunks = []
+            break
+        chunks.append(encoded_piece)
+    if not chunks:
         payload = {"ok": False, "error": "Report exceeds the output limit"}
         encoded = (json.dumps(payload) + "\n").encode("utf-8")
+    else:
+        encoded = b"".join(chunks) + b"\n"
     stream = getattr(sys.stdout, "buffer", sys.stdout)
     stream.write(encoded if stream is not sys.stdout else encoded.decode("utf-8"))
     ok = payload.get("ok", True) if isinstance(payload, dict) else True

@@ -463,6 +463,18 @@ class CaptureTests(TempEnv):
 
 
 class HistoryTests(TempEnv):
+    def test_history_read_stops_at_aggregate_byte_budget(self):
+        from unittest import mock
+        from astronoma import capture, history, pacmanlog
+
+        records = [capture._record_from(session, None, []) for session in pacmanlog.sessions()[:2]]
+        history.save_all(records)
+        newest = max(self.state.glob("*.json"), key=lambda path: path.name)
+        with mock.patch.object(history, "MAX_HISTORY_BYTES", newest.stat().st_size + 1):
+            loaded, truncated = history.all_records_with_status()
+        self.assertEqual(len(loaded), 1)
+        self.assertTrue(truncated)
+
     def test_record_schema_enforces_package_actions_and_digest_shape(self):
         from astronoma import capture, history, pacmanlog
 
@@ -745,6 +757,21 @@ class ReleaseTests(TempEnv):
 
 
 class AgentTests(TempEnv):
+    def test_prompt_and_summary_cache_use_utf8_byte_budgets(self):
+        from unittest import mock
+        from astronoma import agent, capture, pacmanlog
+
+        record = capture._record_from(pacmanlog.sessions()[0], None, [])
+        record["warnings"] = ["🚀" * 100_000]
+        prompt = agent.build_prompt(record, [{"tag": "v1", "body": "x" * 200_000}])
+        self.assertLessEqual(len(prompt.encode("utf-8")), agent.MAX_PROMPT_BYTES)
+        payload = {
+            "ok": True, "id": record["id"], "agent": "test", "agentName": "Test",
+            "generatedAt": 1, "text": "🚀" * 40_000,
+        }
+        with self.assertRaises(ValueError):
+            agent.save_summary(record["id"], payload)
+
     def test_agent_summaries_are_disabled_until_explicitly_enabled(self):
         from astronoma import agent
         self.assertFalse(agent.enabled())
@@ -1439,6 +1466,17 @@ class SecurityBoundaryTests(TempEnv):
 
 
 class CliTests(TempEnv):
+    def test_output_limit_is_enforced_while_encoding(self):
+        from unittest import mock
+        from astronoma import cli
+        import contextlib
+        import io
+
+        output = io.StringIO()
+        with mock.patch.object(cli, "MAX_OUTPUT_BYTES", 32), contextlib.redirect_stdout(output):
+            self.assertEqual(cli._emit({"value": "🚀" * 1000}, False), 1)
+        self.assertIn("output limit", json.loads(output.getvalue())["error"])
+
     def test_agent_summary_consent_can_be_revoked(self):
         code, payload = self._run(["agent-summaries", "enable"])
         self.assertEqual((code, payload["enabled"]), (0, True))

@@ -16,6 +16,7 @@ SCHEMA = 1
 _ID = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}$")
 MAX_RECORD_BYTES = 2 * 1024 * 1024
 MAX_RECORDS = 4096
+MAX_HISTORY_BYTES = 32 * 1024 * 1024
 
 
 def valid_id(identifier: str) -> bool:
@@ -62,25 +63,40 @@ def load(identifier: str) -> dict | None:
 
 
 def all_records() -> list[dict]:
+    records, _truncated = all_records_with_status()
+    return records
+
+
+def all_records_with_status() -> tuple[list[dict], bool]:
     """Every captured update, newest first. Unreadable files are skipped."""
     directory = paths.state_dir()
     try:
         files = sorted(paths.list_regular(directory, MAX_RECORDS), reverse=True)
-    except (OSError, ValueError):
-        return []
-    records = []
+    except ValueError:
+        return [], True
+    except OSError:
+        return [], False
+    records, remaining, truncated = [], MAX_HISTORY_BYTES, False
     for name in files:
         file = directory / name
         if not name.endswith(".json") or not valid_id(name[:-5]):
             continue
+        if remaining <= 0:
+            truncated = True
+            break
         try:
-            data = paths.read_json(file, MAX_RECORD_BYTES)
+            limit = min(MAX_RECORD_BYTES, remaining)
+            data, size = paths.read_json_with_size(file, limit)
         except (OSError, ValueError):
+            if remaining < MAX_RECORD_BYTES:
+                truncated = True
+                break
             continue
+        remaining -= size
         if _valid_record(data, name[:-5]):
             records.append(data)
     records.sort(key=lambda r: str(r.get("id") or ""), reverse=True)
-    return records
+    return records, truncated
 
 
 def latest() -> dict | None:
