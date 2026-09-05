@@ -97,10 +97,15 @@ def set_enabled(value: bool) -> None:
 
 def reset_first_run() -> int:
     """Forget generated output and choices while preserving update history."""
-    removed = paths.clear_private_directory(paths.summaries_dir(), MAX_CACHED_SUMMARIES)
+    removed = clear_summaries()
     paths.unlink_private(_consent_path())
     paths.unlink_private(_preference_path())
     return removed
+
+
+def clear_summaries() -> int:
+    """Remove summaries derived from update records, retaining agent choices."""
+    return paths.clear_private_directory(paths.summaries_dir(), MAX_CACHED_SUMMARIES)
 
 
 def preferred_key() -> str | None:

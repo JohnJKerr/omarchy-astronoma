@@ -10,6 +10,7 @@
 #   ./install.sh --menu        also add a row to the Omarchy menu
 #   ./install.sh --enable-agent-summaries  pre-accept the optional AI feature
 #   ./install.sh --reset-agent-summaries   clear summaries and restore first-run consent
+#   ./install.sh --reset-history           rediscover updates and mark them unread
 
 set -euo pipefail
 
@@ -20,6 +21,7 @@ ENABLE=1
 MENU=0
 AGENT_SUMMARIES=0
 RESET_AGENT_SUMMARIES=0
+RESET_HISTORY=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -27,6 +29,7 @@ for arg in "$@"; do
     --menu) MENU=1 ;;
     --enable-agent-summaries) AGENT_SUMMARIES=1 ;;
     --reset-agent-summaries) RESET_AGENT_SUMMARIES=1 ;;
+    --reset-history) RESET_HISTORY=1 ;;
     *)
       echo "Unknown option: $arg" >&2
       exit 2
@@ -91,6 +94,11 @@ fi
 if (( RESET_AGENT_SUMMARIES )); then
   "$TARGET_DIR/bin/astronoma" agent-summaries reset >/dev/null
   echo "Agent summaries reset: generated summaries, consent, and provider choice were cleared."
+fi
+
+if (( RESET_HISTORY )); then
+  "$TARGET_DIR/bin/astronoma" reset-history >/dev/null
+  echo "Update history reset: local evidence will be rediscovered and shown as unread."
 fi
 
 if (( AGENT_SUMMARIES )); then

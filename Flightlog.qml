@@ -844,8 +844,7 @@ Item {
                           if (detailService.summaryRunning) return "Summarising…"
                           if (!service.agentSummariesEnabled)
                             return root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries"
-                          var has = root.record && root.record.summary && root.record.summary.text
-                          return has ? "Summarise again" : "Summarise what changed for me"
+                          return "Summarise"
                         }
                         onClicked: root.requestSummary(
                           !!(root.record && root.record.summary && root.record.summary.text))

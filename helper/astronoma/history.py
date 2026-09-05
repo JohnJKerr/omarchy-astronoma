@@ -89,6 +89,25 @@ def any_records() -> bool:
         return False
 
 
+def reset_captured() -> int:
+    """Remove captured records and read/capture markers, ready for reconstruction."""
+    try:
+        # Early versions did not make every state leaf private. Repair
+        # user-owned regular files before the trusted listing so upgrades can
+        # reset them too; symlinks and foreign-owned entries remain excluded.
+        paths.harden_private_tree(paths.state_dir())
+        names = paths.list_regular(paths.state_dir(), MAX_RECORDS + 8)
+    except FileNotFoundError:
+        return 0
+    record_names = [name for name in names
+                    if name.endswith(".json") and valid_id(name[:-5])]
+    for name in record_names:
+        paths.unlink_private(paths.state_dir() / name)
+    paths.unlink_private(_seen_path())
+    paths.unlink_private(paths.state_dir() / ".capture-sources.json")
+    return len(record_names)
+
+
 def _seen_path():
     return paths.state_dir() / "seen.json"
 

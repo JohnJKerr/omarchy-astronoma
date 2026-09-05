@@ -132,6 +132,11 @@ def _write_cache(releases: list[Release]) -> None:
     paths.atomic_json_write(paths.releases_cache(), payload)
 
 
+def reset_cache() -> None:
+    """Forget the fetched catalogue so the next load starts fresh."""
+    paths.unlink_private(paths.releases_cache())
+
+
 def _fetch(limit: int = 30, timeout: int = 15) -> list[Release]:
     request = urllib.request.Request(
         f"{API}?per_page={int(limit)}",

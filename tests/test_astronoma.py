@@ -647,10 +647,19 @@ class AgentTests(TempEnv):
         self.assertNotIn('"Choose model ▾"', flightlog)
         self.assertIn("service.selectAgent(root.chosenAgentKey)", flightlog)
         self.assertNotIn("service.selectAgent", bar)
+        self.assertNotIn("service.summarise", bar)
         self.assertIn('&& root.chosenAgentKey !== ""', flightlog)
-        self.assertIn("service.agentSummariesEnabled && !!service.selectedAgent", bar)
+        self.assertNotIn("agentSummariesEnabled", bar)
         self.assertIn('argv.push("--agent")', service)
         self.assertIn('"agent-summaries", "status"', service)
+
+    def test_full_panel_uses_concise_summarise_label(self):
+        flightlog = (ROOT / "Flightlog.qml").read_text()
+        bar = (ROOT / "BarWidget.qml").read_text()
+        self.assertIn('return "Summarise"', flightlog)
+        self.assertNotIn("Summarise what changed for me", flightlog)
+        self.assertNotIn("Summarise again", flightlog)
+        self.assertNotIn("Summaris", bar)
 
     def test_missing_provider_has_distinct_disabled_action_and_tooltip(self):
         flightlog = (ROOT / "Flightlog.qml").read_text()
@@ -1187,6 +1196,54 @@ class InstallationTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 2)
             self.assertIn("cannot be used together", completed.stderr)
+
+    def test_install_can_rediscover_history_as_unread(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(__file__).resolve().parents[1]
+            env = self._env(temporary)
+            state = Path(temporary) / "state"
+            cache = Path(temporary) / "cache"
+            Path(env["ASTRONOMA_PACMAN_LOG"]).write_text(PACMAN_SAMPLE)
+            summaries = state / "summaries"
+            summaries.mkdir(parents=True)
+            cache.mkdir(parents=True)
+            stale_id = "2026-01-01-0000"
+            (state / f"{stale_id}.json").write_text("{}\n")
+            (state / "seen.json").write_text(json.dumps({"id": "2026-08-28-2300"}))
+            (state / ".capture-sources.json").write_text("{}\n")
+            (summaries / f"{stale_id}.json").write_text('{"ok": true}\n')
+            (cache / "releases.json").write_text('{"releases": []}\n')
+            (state / "agent-consent.json").write_text('{"enabled": true}\n')
+            (state / "agent-preference.json").write_text('{"agent": "codex"}\n')
+
+            completed = subprocess.run(
+                [root / "install.sh", "--no-enable", "--reset-history"],
+                cwd=root, env=env, check=True, capture_output=True, text=True,
+            )
+
+            self.assertIn("Update history reset", completed.stdout)
+            self.assertFalse((state / f"{stale_id}.json").exists())
+            self.assertFalse((state / "seen.json").exists())
+            self.assertFalse((cache / "releases.json").exists())
+            self.assertEqual(list(summaries.iterdir()), [])
+            self.assertTrue((state / "agent-consent.json").exists())
+            self.assertTrue((state / "agent-preference.json").exists())
+            records = sorted(state.glob("20??-??-??-????.json"))
+            self.assertEqual([item.stem for item in records],
+                             ["2026-08-17-0900", "2026-08-28-2300"])
+
+            # Seed an empty, valid cache so report remains hermetic; no seen
+            # marker means its newest reconstructed record must drive the bar.
+            (cache / "releases.json").write_text(
+                json.dumps({"schema": 1, "fetchedAt": 1, "releases": []}) + "\n"
+            )
+            installed = (Path(temporary) / "config" / "omarchy" / "plugins"
+                         / "io.github.johnjkerr.astronoma" / "bin" / "astronoma")
+            report = subprocess.run(
+                [installed, "report", "--no-capture"], env=env,
+                check=True, capture_output=True, text=True,
+            )
+            self.assertEqual(json.loads(report.stdout)["unread"], "2026-08-28-2300")
 
     def test_uninstall_reverses_the_install_including_the_menu_row(self):
         # The menu row points at the plugin directory, so removing them in

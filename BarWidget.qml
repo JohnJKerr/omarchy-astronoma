@@ -50,8 +50,6 @@ Panel {
     ? Model.highlights(latest.crossed || [], 4)
     : Model.highlights(service.recentReleases, 4)
   readonly property string statusNote: Model.statusNote(service.releaseStatus)
-  readonly property bool hasSummary: !!(latest && latest.summary && latest.summary.text)
-  property string summaryError: ""
 
   function openFlightlog() {
     root.close()
@@ -317,37 +315,6 @@ Panel {
 
           PanelSeparator { foreground: root.foreground }
 
-          Text {
-            visible: root.summaryError !== ""
-            width: parent.width
-            text: root.summaryError
-            textFormat: Text.PlainText
-            color: Color.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-
-          // First-run consent and provider selection belong in the full flight
-          // log, where there is room to explain them. Once configured, the
-          // compact card can still offer the convenient summarise action.
-          Button {
-            visible: service.agentSummariesEnabled && !!service.selectedAgent
-              && !!root.latest && !root.hasSummary
-            width: parent.width
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            text: service.summaryRunning ? "Summarising…" : "Summarise what changed for me"
-            enabled: !service.summaryRunning
-            onClicked: {
-              if (service.summaryRunning || !service.selectedAgent) return
-              root.summaryError = ""
-              service.summarise(root.latest ? root.latest.id : "", false, false,
-                                String(service.selectedAgent.key))
-            }
-          }
-
           Button {
             width: parent.width
             foreground: root.foreground
@@ -360,21 +327,4 @@ Panel {
     }
   }
 
-  Connections {
-    target: service
-    function onSummaryFinished(payload) {
-      if (payload && payload.ok) {
-        // The card does not render summaries, so the flight log is where the
-        // thing just produced can actually be read.
-        root.confirmingAgentEnable = false
-        root.summaryError = ""
-        root.openFlightlog()
-      } else {
-        // Previously silent: a failed summarise closed nothing, showed
-        // nothing, and left the button looking untouched.
-        root.summaryError = payload && payload.error
-          ? payload.error : "The agent did not return a summary"
-      }
-    }
-  }
 }

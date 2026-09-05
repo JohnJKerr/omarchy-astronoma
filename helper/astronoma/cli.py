@@ -68,6 +68,9 @@ def main(argv=None) -> int:
 
     sub.add_parser("agents", parents=[common], help="installed agent CLIs")
 
+    sub.add_parser("reset-history", parents=[common],
+                   help="clear derived update history and release cache")
+
     consent_cmd = sub.add_parser("agent-summaries", parents=[common],
                                  help="inspect or revoke agent-summary consent")
     consent_cmd.add_argument("state", choices=("status", "enable", "disable", "reset"),
@@ -126,6 +129,13 @@ def main(argv=None) -> int:
 
     if args.command == "agents":
         return _emit({"agents": agent.available()}, pretty)
+
+    if args.command == "reset-history":
+        summaries = agent.clear_summaries()
+        records = history.reset_captured()
+        releases_mod.reset_cache()
+        return _emit({"ok": True, "recordsRemoved": records,
+                      "summariesRemoved": summaries}, pretty)
 
     if args.command == "agent-summaries":
         if args.state == "reset":

@@ -133,6 +133,16 @@ summaries, agent consent, and the selected provider:
 ./install.sh --reset-agent-summaries
 ```
 
+To recreate the first-install discovery experience, use `--reset-history`.
+It clears reconstructed records, their generated summaries, read state, and
+the GitHub release cache, then rebuilds the flight log from the update evidence
+still available on this machine. The latest recovered update appears unread in
+the bar. Agent consent and provider choice are retained:
+
+```bash
+./install.sh --reset-history
+```
+
 `install.sh` copies rather than symlinks on purpose: a symlinked plugin
 directory does not hot-reload, and the shell will keep running stale QML.
 
@@ -260,6 +270,7 @@ bin/astronoma show <id>       # one update in full
 bin/astronoma releases        # Omarchy releases (--refresh to fetch)
 bin/astronoma agents          # which agent CLIs are installed
 bin/astronoma agent-summaries # consent status; add enable, disable, or reset
+bin/astronoma reset-history   # rediscover updates and clear the release cache
 bin/astronoma summarise [id]  # impact summary via an installed agent
 bin/astronoma seen [id]       # mark an update as read
 ```
