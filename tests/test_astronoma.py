@@ -159,6 +159,32 @@ class VersionTests(unittest.TestCase):
 
 
 class PacmanLogTests(TempEnv):
+    def test_timestamp_sweeps_preserve_unsorted_inclusive_windows(self):
+        from astronoma import pacmanlog
+
+        base = datetime.fromisoformat("2026-08-28T23:00:00+01:00")
+        changes = [
+            pacmanlog.PackageChange("before", "installed", base - timedelta(seconds=1)),
+            pacmanlog.PackageChange("end", "installed", base + timedelta(minutes=30)),
+            pacmanlog.PackageChange("start", "installed", base),
+            pacmanlog.PackageChange("after", "installed", base + timedelta(minutes=30, seconds=1)),
+        ]
+        commands = [
+            (base + timedelta(hours=1), "pacman -Q"),
+            (base, "pacman -U /home/user/.cache/yay/pkg.tar.zst"),
+        ]
+        pacmanlog._mark_aur(changes, commands)
+        self.assertEqual(
+            {change.name for change in changes if change.aur}, {"start", "end"}
+        )
+
+        self.pacman.write_text(
+            "[2026-08-28T23:10:00+0100] [ALPM] installed later (1)\n"
+            "[2026-08-28T23:00:00+0100] [PACMAN] Running 'pacman -Syu'\n"
+            "[2026-08-28T23:01:00+0100] [ALPM] installed earlier (1)\n"
+        )
+        session = pacmanlog.sessions()[0]
+        self.assertEqual(session.commands, ["pacman -Syu"])
     def test_package_fields_and_action_counts_match_record_limits(self):
         from unittest import mock
         from astronoma import pacmanlog

@@ -11,6 +11,7 @@ looks like from the log's point of view.
 import os
 import re
 import stat
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -228,17 +229,16 @@ def _mark_aur(changes: list[PackageChange], commands: list[tuple[datetime, str]]
     yay hands pacman a built `-U /home/<user>/.cache/yay/...` package, which
     is the only trace in the log that a change came from the AUR.
     """
-    windows = [
+    windows = sorted(
         at for at, cmd in commands
         if " -U " in f" {cmd} " and "/.cache/" in cmd
-    ]
+    )
     if not windows:
         return
     for change in changes:
-        for start in windows:
-            if start <= change.at <= start + timedelta(minutes=30):
-                change.aur = True
-                break
+        position = bisect_right(windows, change.at) - 1
+        if position >= 0 and change.at <= windows[position] + timedelta(minutes=30):
+            change.aur = True
 
 
 def sessions_with_identity(path=None, gap: timedelta = SESSION_GAP) -> tuple[
@@ -255,6 +255,7 @@ def sessions_with_identity(path=None, gap: timedelta = SESSION_GAP) -> tuple[
         return [], identity
 
     changes.sort(key=lambda c: c.at)
+    commands.sort(key=lambda item: item[0])
     grouped: list[Session] = []
     current = Session(started=changes[0].at, finished=changes[0].at)
     for change in changes:
@@ -265,11 +266,11 @@ def sessions_with_identity(path=None, gap: timedelta = SESSION_GAP) -> tuple[
         current.finished = change.at
     grouped.append(current)
 
+    command_times = [at for at, _cmd in commands]
     for session in grouped:
-        session.commands = [
-            cmd for at, cmd in commands
-            if session.started - gap <= at <= session.finished + gap
-        ]
+        start = bisect_left(command_times, session.started - gap)
+        end = bisect_right(command_times, session.finished + gap)
+        session.commands = [cmd for _at, cmd in commands[start:end]]
     return grouped, identity
 
 
