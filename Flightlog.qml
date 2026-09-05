@@ -260,6 +260,7 @@ Item {
   Service {
     id: detailService
     property var record: null
+    property string detailError: ""
     property string loadedId: ""
     property string requestedId: ""
     property string activeId: ""
@@ -268,12 +269,14 @@ Item {
       requestedId = ""
       loadedId = ""
       record = null
+      detailError = ""
       loading = false
     }
 
     function load(id) {
       if (!id) return
       requestedId = String(id)
+      detailError = ""
       if (requestedId !== loadedId) {
         detailService.loading = true
         // The loading surface covers the previous update. Keep its detail
@@ -290,13 +293,19 @@ Item {
       id: detailProcess
       onFinished: function(exitCode, failure) {
         if (detailService.activeId === detailService.requestedId) {
-          if (failure || exitCode !== 0) detailService.record = null
+          if (failure || exitCode !== 0) {
+            detailService.record = null
+            detailService.detailError = failure === "timeout"
+              ? "Update details timed out" : "Could not load update details"
+          }
           else try {
             var parsed = JSON.parse(detailProcess.stdoutText)
-            detailService.record = parsed && parsed.ok ? parsed : null
+            detailService.record = Model.validDetail(parsed, detailService.activeId) ? parsed : null
             if (detailService.record) detailService.loadedId = detailService.activeId
+            else detailService.detailError = "Could not read update details"
           } catch (error) {
             detailService.record = null
+            detailService.detailError = "Could not read update details"
           }
         }
         if (detailService.requestedId && detailService.requestedId !== detailService.activeId)
@@ -725,6 +734,17 @@ Item {
                   visible: service.problem !== ""
                   width: parent.width
                   text: service.problem + ". Press R to retry."
+                  textFormat: Text.PlainText
+                  color: Color.urgent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  wrapMode: Text.WordWrap
+                }
+
+                Text {
+                  visible: detailService.detailError !== ""
+                  width: parent.width
+                  text: detailService.detailError + ". Press R to retry."
                   textFormat: Text.PlainText
                   color: Color.urgent
                   font.family: root.fontFamily

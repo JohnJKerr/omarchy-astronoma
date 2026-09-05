@@ -1,4 +1,5 @@
 import QtQuick
+import "Model.js" as Model
 
 // Runs the `astronoma` helper and holds the result.
 //
@@ -117,7 +118,7 @@ Item {
       lastError = "Could not read the update report"
       return
     }
-    if (!parsed || typeof parsed !== "object") {
+    if (!Model.validReport(parsed)) {
       lastError = "Could not read the update report"
       return
     }

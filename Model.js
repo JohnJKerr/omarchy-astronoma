@@ -189,3 +189,117 @@ function statusNote(status) {
   if (status.stale) return "Showing cached release notes"
   return ""
 }
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function boundedText(value, limit, optional) {
+  return (optional && (value === null || value === undefined))
+    || (typeof value === "string" && value.length <= limit)
+}
+
+function validChange(value) {
+  return isObject(value)
+    && boundedText(value.name, 1024, false)
+    && ["upgraded", "installed", "removed"].indexOf(value.action) >= 0
+    && boundedText(value.from, 1024, true)
+    && boundedText(value.to, 1024, true)
+    && (value.aur === undefined || typeof value.aur === "boolean")
+}
+
+function validChanges(value) {
+  return Array.isArray(value) && value.length <= 5000 && value.every(validChange)
+}
+
+function validRecord(value, expectedId) {
+  if (!isObject(value) || value.schema !== 1 || !boundedText(value.id, 32, false)) return false
+  if (expectedId && value.id !== String(expectedId)) return false
+  if (!isObject(value.omarchy) || !isObject(value.packages)) return false
+  if (!boundedText(value.startedAt, 1024, false)
+      || !boundedText(value.finishedAt, 1024, false)
+      || !boundedText(value.omarchy.from, 1024, true)
+      || !boundedText(value.omarchy.to, 1024, true)
+      || typeof value.omarchy.changed !== "boolean") return false
+  if (!["upgraded", "installed", "removed"].every(function(key) {
+    return validChanges(value.packages[key])
+  })) return false
+  if (!validChanges(value.aur) || !Array.isArray(value.migrations)
+      || !Array.isArray(value.warnings) || !Array.isArray(value.errors)) return false
+  if (value.migrations.length > 1000 || value.warnings.length > 1000
+      || value.errors.length > 1000) return false
+  if (["failed", "aurSkipped", "partial"].some(function(key) {
+    return typeof value[key] !== "boolean"
+  }) || !isObject(value.sources)) return false
+  return value.migrations.every(function(item) { return boundedText(item, 65536, false) })
+    && value.warnings.every(function(item) { return boundedText(item, 65536, false) })
+    && value.errors.every(function(item) { return boundedText(item, 65536, false) })
+}
+
+function validRelease(value) {
+  return isObject(value)
+    && boundedText(value.tag, 2048, false)
+    && boundedText(value.version, 2048, false)
+    && boundedText(value.name, 2048, false)
+    && boundedText(value.publishedAt, 2048, false)
+    && boundedText(value.body, 262144, false)
+    && boundedText(value.url, 2048, false)
+}
+
+function validReleases(value) {
+  return Array.isArray(value) && value.length <= 30 && value.every(validRelease)
+}
+
+function validAgent(value) {
+  return isObject(value) && boundedText(value.key, 32, false)
+    && boundedText(value.name, 80, false) && boundedText(value.command, 128, false)
+}
+
+function validHistoryRow(value) {
+  return isObject(value) && boundedText(value.id, 32, false)
+    && boundedText(value.at, 1024, false) && isObject(value.omarchy)
+    && isObject(value.counts) && typeof value.packageTotal === "number"
+    && typeof value.migrations === "number" && typeof value.errors === "number"
+    && typeof value.warnings === "number" && typeof value.partial === "boolean"
+}
+
+function validSummary(value) {
+  return value === null || value === undefined || (isObject(value) && value.ok === true
+    && boundedText(value.id, 32, false) && boundedText(value.agent, 32, false)
+    && boundedText(value.agentName, 80, false)
+    && boundedText(value.text, 131072, false))
+}
+
+function validReport(value) {
+  if (!isObject(value) || value.schema !== 1 || !isObject(value.plugin)
+      || !isObject(value.omarchy) || !isObject(value.releases)) return false
+  if (!boundedText(value.plugin.version, 32, false)
+      || !boundedText(value.omarchy.installed, 128, true)
+      || !boundedText(value.omarchy.installedRaw, 128, true)
+      || typeof value.omarchy.isDev !== "boolean"
+      || typeof value.omarchy.versionUnknown !== "boolean") return false
+  if (!Array.isArray(value.history) || value.history.length > 4096
+      || !Array.isArray(value.agents) || value.agents.length > 8) return false
+  if (!value.history.every(validHistoryRow) || !value.agents.every(validAgent)) return false
+  if (!validReleases(value.releases.recent)
+      || !validReleases(value.releases.upcoming)
+      || !validReleases(value.releases.earlier)) return false
+  if (value.latest !== null && value.latest !== undefined && !validRecord(value.latest)) return false
+  if (!boundedText(value.unread, 32, true)
+      || (value.selectedAgent !== null && value.selectedAgent !== undefined
+          && !validAgent(value.selectedAgent))
+      || typeof value.agentSelectionMissing !== "boolean"
+      || typeof value.agentSummariesEnabled !== "boolean") return false
+  if (value.latest && (!validReleases(value.latest.crossed)
+                       || !validSummary(value.latest.summary))) return false
+  return boundedText(value.captureError, 200, true)
+    && boundedText(value.historyError, 200, true)
+}
+
+function validDetail(value, expectedId) {
+  return isObject(value) && value.ok === true && validRecord(value, expectedId)
+    && validReleases(value.crossed)
+    && validSummary(value.summary)
+    && Array.isArray(value.agents) && value.agents.length <= 8
+    && value.agents.every(validAgent)
+}

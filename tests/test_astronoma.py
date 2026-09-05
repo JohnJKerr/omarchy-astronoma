@@ -1128,6 +1128,35 @@ class ReportTests(TempEnv):
 
 
 class SecurityBoundaryTests(TempEnv):
+    def test_qml_model_rejects_malformed_report_and_wrong_detail_identity(self):
+        from astronoma import capture, report, releases
+
+        capture.run()
+        self.cache.mkdir(parents=True, exist_ok=True)
+        (self.cache / "releases.json").write_text(json.dumps({
+            "schema": releases.CACHE_SCHEMA, "fetchedAt": 1, "releases": [],
+        }))
+        payload = report.build()
+        detail = report.detail(payload["latest"]["id"])
+        source = (ROOT / "Model.js").read_text().replace(".pragma library", "")
+        script = source + "\nconsole.log(JSON.stringify([" \
+            "validReport(JSON.parse(process.argv[1]))," \
+            "validReport([])," \
+            "validDetail(JSON.parse(process.argv[2]), process.argv[3])," \
+            "validDetail(JSON.parse(process.argv[2]), 'wrong-id')]));"
+        completed = subprocess.run(
+            ["node", "-e", script, json.dumps(payload), json.dumps(detail), detail["id"]],
+            check=True, capture_output=True, text=True,
+        )
+        self.assertEqual(json.loads(completed.stdout), [True, False, True, False])
+
+    def test_detail_failures_have_an_explicit_plain_text_state(self):
+        flightlog = (ROOT / "Flightlog.qml").read_text()
+        self.assertIn('property string detailError: ""', flightlog)
+        self.assertIn("Model.validDetail(parsed, detailService.activeId)", flightlog)
+        self.assertIn("text: detailService.detailError", flightlog)
+        self.assertIn("textFormat: Text.PlainText", flightlog)
+
     def test_json_reader_rejects_depth_invalid_utf8_and_nan(self):
         from astronoma import paths
 
