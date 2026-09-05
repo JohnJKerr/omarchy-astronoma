@@ -12,7 +12,7 @@ rather than round-tripped through a JSON parser.
 """
 
 import os
-import re
+import json
 import sys
 from pathlib import Path
 
@@ -29,6 +29,179 @@ ROW = (
 )
 
 
+class MenuSyntaxError(ValueError):
+    pass
+
+
+def _scan(text: str) -> tuple[list[tuple[str, str, int, int, int]], int]:
+    """Tokenize enough JSONC to edit top-level properties without touching strings."""
+    tokens = []
+    stack = []
+    index = 0
+    root_close = -1
+    while index < len(text):
+        char = text[index]
+        if char.isspace():
+            index += 1
+            continue
+        if text.startswith("//", index):
+            end = text.find("\n", index)
+            index = len(text) if end < 0 else end
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            if end < 0:
+                raise MenuSyntaxError("unterminated block comment")
+            index = end + 2
+            continue
+        depth = len(stack)
+        if char == '"':
+            end = index + 1
+            escaped = False
+            while end < len(text):
+                current = text[end]
+                if current == '"' and not escaped:
+                    end += 1
+                    break
+                if current in "\r\n" and not escaped:
+                    raise MenuSyntaxError("newline in string")
+                if current == "\\" and not escaped:
+                    escaped = True
+                else:
+                    escaped = False
+                end += 1
+            else:
+                raise MenuSyntaxError("unterminated string")
+            try:
+                value = json.loads(text[index:end])
+            except json.JSONDecodeError as error:
+                raise MenuSyntaxError("invalid string") from error
+            tokens.append(("string", value, index, end, depth))
+            index = end
+            continue
+        if char in "{[":
+            tokens.append((char, char, index, index + 1, depth))
+            stack.append(char)
+        elif char in "}]":
+            expected = "{" if char == "}" else "["
+            if not stack or stack[-1] != expected:
+                raise MenuSyntaxError("unbalanced container")
+            if len(stack) == 1 and char == "}":
+                root_close = index
+            tokens.append((char, char, index, index + 1, depth))
+            stack.pop()
+        elif char in ":,":
+            tokens.append((char, char, index, index + 1, depth))
+        else:
+            end = index + 1
+            while end < len(text) and not text[end].isspace() and text[end] not in '{}[],:"/':
+                end += 1
+            tokens.append(("atom", text[index:end], index, end, depth))
+            index = end
+            continue
+        index += 1
+    if stack or not tokens or tokens[0][0] != "{" or root_close < 0:
+        raise MenuSyntaxError("menu root is not a complete object")
+    _validate_tokens(tokens)
+    return tokens, root_close
+
+
+def _validate_tokens(tokens) -> None:
+    """Validate the JSON grammar, with comments removed and trailing commas allowed."""
+    def value(position):
+        if position >= len(tokens):
+            raise MenuSyntaxError("missing value")
+        kind = tokens[position][0]
+        if kind == "string":
+            return position + 1
+        if kind == "atom":
+            try:
+                parsed = json.loads(tokens[position][1])
+            except json.JSONDecodeError as error:
+                raise MenuSyntaxError("invalid scalar") from error
+            if isinstance(parsed, (dict, list, str)):
+                raise MenuSyntaxError("invalid scalar")
+            return position + 1
+        if kind == "[":
+            position += 1
+            if position < len(tokens) and tokens[position][0] == "]":
+                return position + 1
+            while True:
+                position = value(position)
+                if position >= len(tokens):
+                    raise MenuSyntaxError("unterminated array")
+                if tokens[position][0] == "]":
+                    return position + 1
+                if tokens[position][0] != ",":
+                    raise MenuSyntaxError("missing array comma")
+                position += 1
+                if position < len(tokens) and tokens[position][0] == "]":
+                    return position + 1
+        if kind == "{":
+            position += 1
+            if position < len(tokens) and tokens[position][0] == "}":
+                return position + 1
+            while True:
+                if position >= len(tokens) or tokens[position][0] != "string":
+                    raise MenuSyntaxError("object key is not a string")
+                position += 1
+                if position >= len(tokens) or tokens[position][0] != ":":
+                    raise MenuSyntaxError("object key has no colon")
+                position = value(position + 1)
+                if position >= len(tokens):
+                    raise MenuSyntaxError("unterminated object")
+                if tokens[position][0] == "}":
+                    return position + 1
+                if tokens[position][0] != ",":
+                    raise MenuSyntaxError("missing object comma")
+                position += 1
+                if position < len(tokens) and tokens[position][0] == "}":
+                    return position + 1
+        raise MenuSyntaxError("unexpected token")
+
+    if value(0) != len(tokens):
+        raise MenuSyntaxError("content follows the root object")
+
+
+def _properties(text: str):
+    tokens, root_close = _scan(text)
+    properties = []
+    for position, token in enumerate(tokens):
+        kind, key, start, _end, depth = token
+        if kind != "string" or depth != 1:
+            continue
+        if position + 1 >= len(tokens) or tokens[position + 1][0] != ":":
+            continue
+        if position == 0 or tokens[position - 1][0] not in ("{", ","):
+            continue
+        delimiter = None
+        for candidate in tokens[position + 2:]:
+            if candidate[4] == 1 and candidate[0] in (",", "}"):
+                delimiter = candidate
+                break
+        if delimiter is None:
+            raise MenuSyntaxError("property has no end")
+        line_start = text.rfind("\n", 0, start) + 1
+        property_start = line_start if text[line_start:start].strip() == "" else start
+        value_end = delimiter[2]
+        while value_end > start and text[value_end - 1].isspace():
+            value_end -= 1
+        properties.append({
+            "key": key,
+            "start": property_start,
+            "value_end": value_end,
+            "comma_end": delimiter[3] if delimiter[0] == "," else None,
+        })
+    return properties, root_close
+
+
+def _replace_span(text: str, item: dict, replacement: str) -> str:
+    end = item["comma_end"] or item["value_end"]
+    if end < len(text) and text[end:end + 1] == "\n":
+        end += 1
+    return text[:item["start"]] + replacement + text[end:]
+
+
 def target() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     return Path(base) / "omarchy" / "extensions" / "omarchy-menu.jsonc"
@@ -36,32 +209,24 @@ def target() -> Path:
 
 def add(path: Path) -> str:
     text = path.read_text() if path.exists() else "{\n}\n"
-    if f'"{KEY}"' in text:
+    try:
+        properties, closing = _properties(text)
+    except MenuSyntaxError:
+        return "could not parse the menu file; left it alone"
+    existing = next((item for item in properties if item["key"] == KEY), None)
+    if existing:
         # Rewrite in place rather than skipping, so a reinstall picks up a
         # changed label or action instead of leaving the old row behind.
-        updated = re.sub(
-            r'^[ \t]*"%s"\s*:.*\n' % re.escape(KEY), ROW, text, flags=re.M
-        )
+        updated = _replace_span(text, existing, ROW)
         if updated == text:
             return "already present"
         path.write_text(updated)
         return "updated"
     # Splice before the final closing brace so surrounding comments survive.
-    closing = text.rfind("}")
-    if closing == -1:
-        return "could not parse the menu file; left it alone"
     prefix = text[:closing]
-    # JSONC permits trailing commas, but users often omit one on the final
-    # property. Add the separator to that property before inserting ours.
-    significant = list(re.finditer(r"(?m)^(?!\s*(?://|/\*|\*)).+\S\s*$", prefix))
-    if significant:
-        line = significant[-1]
-        content = line.group(0)
-        code, marker, comment = content.partition("//")
-        if code.rstrip()[-1:] not in ("{", ","):
-            code = code.rstrip() + ","
-            content = code + ((" " + marker + comment) if marker else "")
-            prefix = prefix[:line.start()] + content + "\n" + prefix[line.end():].lstrip("\n")
+    if properties and properties[-1]["comma_end"] is None:
+        comma_at = properties[-1]["value_end"]
+        prefix = prefix[:comma_at] + "," + prefix[comma_at:]
     updated = prefix + ROW + text[closing:]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(updated)
@@ -72,12 +237,21 @@ def remove(path: Path) -> str:
     if not path.exists():
         return "nothing to remove"
     text = path.read_text()
-    updated = re.sub(r'^[ \t]*"%s"\s*:.*\n' % re.escape(KEY), "", text, flags=re.M)
-    if updated == text:
+    try:
+        properties, _closing = _properties(text)
+    except MenuSyntaxError:
+        return "could not parse the menu file; left it alone"
+    existing = next((item for item in properties if item["key"] == KEY), None)
+    if not existing:
         return "nothing to remove"
-    # Restore a conventional non-trailing final property when our inserted
-    # row was the only reason it needed a comma.
-    updated = re.sub(r",([ \t]*(?://[^\n]*)?\n[ \t]*})", r"\1", updated, count=1)
+    updated = _replace_span(text, existing, "")
+    # We add Astronoma last. If its removal exposes the separator that add()
+    # introduced on the preceding property, restore the conventional form.
+    was_last = existing is properties[-1]
+    remaining, _closing = _properties(updated)
+    if was_last and remaining and remaining[-1]["comma_end"] is not None:
+        comma = remaining[-1]["comma_end"] - 1
+        updated = updated[:comma] + updated[comma + 1:]
     path.write_text(updated)
     return "removed"
 

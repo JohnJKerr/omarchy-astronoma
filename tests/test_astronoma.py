@@ -1157,6 +1157,20 @@ class CliTests(TempEnv):
 
 
 class MenuEntryTests(unittest.TestCase):
+    def _run_menu(self, initial, *actions):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / "omarchy" / "extensions" / "omarchy-menu.jsonc"
+            config.parent.mkdir(parents=True)
+            config.write_text(initial)
+            env = {**os.environ, "XDG_CONFIG_HOME": temporary}
+            script = str(Path(__file__).resolve().parents[1] / "bin" / "astronoma-menu-entry")
+            results = []
+            for action in actions:
+                results.append(subprocess.run(
+                    [script, action], env=env, check=True, capture_output=True, text=True
+                ).stdout)
+            return config.read_text(), results
+
     def test_add_preserves_valid_object_without_trailing_comma_and_remove_reverses_it(self):
         with tempfile.TemporaryDirectory() as temporary:
             config = Path(temporary) / "omarchy" / "extensions" / "omarchy-menu.jsonc"
@@ -1170,6 +1184,50 @@ class MenuEntryTests(unittest.TestCase):
             json.loads(re.sub(r",\s*}", "\n}", added))
             subprocess.run([script, "remove"], env=env, check=True, capture_output=True)
             self.assertEqual(json.loads(config.read_text()), {"existing": {"label": "Existing"}})
+
+    def test_add_does_not_treat_url_as_a_jsonc_comment(self):
+        initial = '{\n  "existing": {"action":"xdg-open https://example.com"}\n}\n'
+        added, _ = self._run_menu(initial, "add")
+        self.assertIn('"action":"xdg-open https://example.com"},', added)
+        removed, _ = self._run_menu(initial, "add", "remove")
+        self.assertEqual(removed, initial)
+
+    def test_reinstall_replaces_a_multiline_existing_row(self):
+        initial = ("{\n  // retained before\n  \"update.astronoma\": {\n"
+                   "    \"label\": \"Old\",\n    \"nested\": {\"quote\": \"a\\\"b\"}\n"
+                   "  },\n  // retained after\n  \"other\": true\n}\n")
+        updated, results = self._run_menu(initial, "add")
+        self.assertIn("updated:", results[0])
+        self.assertIn("// retained before", updated)
+        self.assertIn("// retained after", updated)
+        self.assertNotIn('"label": "Old"', updated)
+        self.assertEqual(updated.count('"update.astronoma"'), 1)
+
+    def test_malformed_menu_is_left_unchanged(self):
+        malformed = (
+            '{\n  "broken": {\n',
+            '{"first": true "second": false}\n',
+            '{"bad": wat}\n',
+            '{"bad": "unterminated}\n',
+        )
+        for initial in malformed:
+            with self.subTest(initial=initial):
+                result, output = self._run_menu(initial, "add")
+                self.assertEqual(result, initial)
+                self.assertIn("could not parse", output[0])
+
+    def test_remove_handles_each_property_position(self):
+        fixtures = (
+            ('{"update.astronoma": {}, "other": true}\n', '"other": true'),
+            ('{"first": true, "update.astronoma": {}, "last": true,}\n', '"last": true,'),
+            ('{"first": true, "update.astronoma": {}}\n', '"first": true'),
+            ('{"update.astronoma": {}}\n', '{}\n'),
+        )
+        for initial, retained in fixtures:
+            with self.subTest(initial=initial):
+                result, _ = self._run_menu(initial, "remove")
+                self.assertIn(retained, result)
+                self.assertNotIn('"update.astronoma"', result)
 
 
 class InstallationTests(unittest.TestCase):
