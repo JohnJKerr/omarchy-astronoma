@@ -1,37 +1,33 @@
 import QtQuick
+import QtQuick.Effects
 import qs.Commons
 
 // A deliberately typographic little release map. Releases are laid out in
 // chronological space (older left, newer right), while the selected release
-// occupies the centre. Moving the selection animates the same planet glyphs
-// through the system instead of replacing three static labels.
+// occupies the centre. Selection snaps into place so navigation feedback is
+// immediate even while a large release body is still loading.
 Item {
   id: root
   clip: true
 
   property var releases: []
   property int selectedIndex: 0
+  property bool futureSelected: false
+  property bool earlierSelected: false
   property color foreground: Color.foreground
   property color accent: Color.accent
   property string fontFamily: Style.font.family
+  property string hoveredTarget: ""
+  readonly property bool actionableHovered: hoveredTarget !== ""
 
   signal releaseActivated(int index)
+  signal futureActivated()
+  signal earlierActivated()
 
   implicitWidth: Style.space(510)
   implicitHeight: Style.space(132)
 
   readonly property real orbitSpacing: Math.min(Style.space(165), width * 0.31)
-
-  function planetKind(release) {
-    var weight = String((release && release.body) || "").length
-    if (weight > 12000) return 2
-    if (weight > 4000) return 1
-    return 0
-  }
-
-  function planetSize(release) {
-    return [Style.space(58), Style.space(78), Style.space(98)][planetKind(release)]
-  }
 
   Repeater {
     model: root.releases
@@ -43,6 +39,7 @@ Item {
 
       readonly property int distance: Math.abs(index - root.selectedIndex)
       readonly property bool selected: index === root.selectedIndex
+        && !root.futureSelected && !root.earlierSelected
 
       width: Style.space(130)
       height: root.height
@@ -50,9 +47,6 @@ Item {
       opacity: distance <= 1 ? 1 : 0
       visible: opacity > 0
       z: selected ? 2 : 1
-
-      Behavior on x { NumberAnimation { duration: 360; easing.type: Easing.InOutCubic } }
-      Behavior on opacity { NumberAnimation { duration: 180 } }
 
       Column {
         anchors.centerIn: parent
@@ -63,21 +57,23 @@ Item {
           height: Style.space(102)
           anchors.horizontalCenter: parent.horizontalCenter
 
-          Image {
-            readonly property int kind: root.planetKind(planet.modelData)
+          ReleasePlanet {
             anchors.centerIn: parent
-            width: root.planetSize(planet.modelData)
-            height: width
-            source: "assets/release-planets.png"
-            // The generated sheet is four equal-width cells. Cropping in the
-            // scene graph keeps this to one small installed asset.
-            sourceClipRect: Qt.rect(kind * 272, 0, 272, 320)
-            fillMode: Image.PreserveAspectFit
-            smooth: false
-            mipmap: false
-            opacity: planet.selected ? 1 : 0.72
+            release: planet.modelData
+            patchSize: Style.space(58)
+            minorSize: Style.space(78)
+            majorSize: Style.space(98)
+            artOpacity: planet.selected ? 1 : 0.72
+            spinning: planet.visible
+            // Keep neighbouring worlds subtly out of sync while each rotates
+            // in place around its own centre.
+            spinDuration: 11000 + (planet.index % 5) * 700
 
-            Behavior on opacity { NumberAnimation { duration: 180 } }
+          }
+
+          FlyingSaucer {
+            anchors.centerIn: parent
+            active: planet.selected && planet.visible
           }
         }
 
@@ -96,6 +92,11 @@ Item {
         id: planetHover
         enabled: !planet.selected
         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onHoveredChanged: {
+          var target = "release:" + planet.index
+          if (hovered) root.hoveredTarget = target
+          else if (root.hoveredTarget === target) root.hoveredTarget = ""
+        }
       }
 
       TapHandler {
@@ -105,43 +106,224 @@ Item {
     }
   }
 
-  // The fog occupies the missing chronological neighbour, so the map never
-  // misleadingly suggests that the known release list continues forever.
+  // The selected world occasionally attracts a tiny visitor. Each pass uses
+  // opposite endpoints so it crosses the planet, with enough silence between
+  // appearances that it remains a surprise.
+  component FlyingSaucer: Item {
+    id: saucer
+
+    property bool active: false
+    property real destinationX: 0
+    property real destinationY: 0
+    property real flightX: 0
+    property real flightY: 0
+    property int flightDuration: 600
+    property int idleDuration: 8000
+
+    width: Style.space(25)
+    height: Style.space(15)
+    visible: active
+    opacity: 0
+    z: 3
+    transform: Translate {
+      x: saucer.flightX
+      y: saucer.flightY
+    }
+
+    function chooseNextPass() {
+      var leftToRight = Math.random() < 0.5
+      var radiusX = Style.space(48 + Math.random() * 10)
+      var verticalDirection = Math.random() < 0.5 ? -1 : 1
+      var verticalOffset = Style.space(8 + Math.random() * 12)
+      flightX = leftToRight ? -radiusX : radiusX
+      flightY = verticalDirection * verticalOffset
+      destinationX = -flightX
+      destinationY = -flightY
+      flightDuration = 650 + Math.floor(Math.random() * 250)
+      idleDuration = 8000 + Math.floor(Math.random() * 6000)
+    }
+
+    onActiveChanged: {
+      opacity = 0
+      if (active) {
+        idleDuration = 8000 + Math.floor(Math.random() * 6000)
+      }
+    }
+
+    Image {
+      id: saucerArt
+      anchors.fill: parent
+      source: "assets/release-flying-saucer.png"
+      fillMode: Image.PreserveAspectFit
+      smooth: true
+      mipmap: true
+    }
+
+    MultiEffect {
+      anchors.fill: saucerArt
+      source: saucerArt
+      colorization: 1
+      colorizationColor: root.accent
+      opacity: 0.14
+    }
+
+    SequentialAnimation {
+      running: saucer.active
+      loops: Animation.Infinite
+
+      PauseAnimation { duration: saucer.idleDuration }
+      ScriptAction { script: saucer.chooseNextPass() }
+
+      ParallelAnimation {
+        NumberAnimation {
+          target: saucer
+          property: "flightX"
+          to: saucer.destinationX
+          duration: saucer.flightDuration
+          easing.type: Easing.InOutSine
+        }
+        NumberAnimation {
+          target: saucer
+          property: "flightY"
+          to: saucer.destinationY
+          duration: saucer.flightDuration
+          easing.type: Easing.InOutSine
+        }
+        SequentialAnimation {
+          NumberAnimation {
+            target: saucer
+            property: "opacity"
+            to: 1
+            duration: Math.min(180, saucer.flightDuration / 3)
+          }
+          PauseAnimation {
+            duration: Math.max(1, saucer.flightDuration - 360)
+          }
+          NumberAnimation {
+            target: saucer
+            property: "opacity"
+            to: 0
+            duration: Math.min(180, saucer.flightDuration / 3)
+          }
+        }
+      }
+
+    }
+  }
+
+  // Instruments occupy the missing chronological neighbours: an astrolabe
+  // looks into history and a telescope looks beyond the installed release.
   component UnchartedPlanet: Item {
+    id: uncharted
     // A fog world lives one index beyond an end of the real catalogue. That
     // makes it travel through the same orbit coordinates as every release
     // instead of popping into an already-settled side slot.
     property int virtualIndex: 0
+    property string instrument: ""
+    property real instrumentAngle: 0
+    readonly property bool selected: instrument === "telescope"
+      ? root.futureSelected : root.earlierSelected
     readonly property int distance: Math.abs(virtualIndex - root.selectedIndex)
     width: Style.space(130)
     height: root.height
     x: root.width / 2 - width / 2
       + (root.selectedIndex - virtualIndex) * root.orbitSpacing
-    opacity: distance <= 1 ? 0.55 : 0
+    opacity: distance <= 1 ? (selected ? 1 : 0.55) : 0
     visible: opacity > 0
-
-    Behavior on x { NumberAnimation { duration: 360; easing.type: Easing.InOutCubic } }
-    Behavior on opacity { NumberAnimation { duration: 180 } }
+    z: selected ? 2 : 1
 
     Image {
       anchors.centerIn: parent
       width: Style.space(84)
       height: width
-      source: "assets/release-planets.png"
-      sourceClipRect: Qt.rect(3 * 272, 0, 272, 320)
+      source: uncharted.instrument === "telescope"
+        ? "assets/release-telescope-stand.png"
+        : "assets/release-astrolabe-body.png"
+      sourceClipRect: Qt.rect(0, 0, 272, 320)
       fillMode: Image.PreserveAspectFit
-      smooth: false
-      mipmap: false
+      smooth: true
+      mipmap: true
+    }
+
+    Image {
+      id: movingInstrument
+      anchors.centerIn: parent
+      width: Style.space(84)
+      height: width
+      source: uncharted.instrument === "telescope"
+        ? "assets/release-telescope-tube.png"
+        : "assets/release-astrolabe-dial.png"
+      sourceClipRect: Qt.rect(0, 0, 272, 320)
+      fillMode: Image.PreserveAspectFit
+      smooth: true
+      mipmap: true
+
+      transform: Rotation {
+        // Both layers retain the source canvas, so these origins are the
+        // instrument pivots after PreserveAspectFit scales 272x320 into 84px.
+        origin.x: uncharted.instrument === "telescope"
+          ? Style.space(30.2) : Style.space(42)
+        origin.y: uncharted.instrument === "telescope"
+          ? Style.space(40.4) : Style.space(44.1)
+        angle: uncharted.instrumentAngle
+      }
+    }
+
+    NumberAnimation on instrumentAngle {
+      running: uncharted.visible && uncharted.instrument === "astrolabe"
+      loops: Animation.Infinite
+      from: 0
+      to: 360
+      duration: 16000
+      easing.type: Easing.Linear
+    }
+
+    SequentialAnimation on instrumentAngle {
+      running: uncharted.visible && uncharted.instrument === "telescope"
+      loops: Animation.Infinite
+      NumberAnimation {
+        from: -4
+        to: 5
+        duration: 1800
+        easing.type: Easing.InOutSine
+      }
+      NumberAnimation {
+        from: 5
+        to: -4
+        duration: 1800
+        easing.type: Easing.InOutSine
+      }
+    }
+
+    HoverHandler {
+      id: unchartedHover
+      enabled: uncharted.instrument !== ""
+      cursorShape: Qt.PointingHandCursor
+      onHoveredChanged: {
+        var target = "instrument:" + uncharted.instrument
+        if (hovered) root.hoveredTarget = target
+        else if (root.hoveredTarget === target) root.hoveredTarget = ""
+      }
+    }
+
+    TapHandler {
+      enabled: uncharted.instrument !== ""
+      onTapped: {
+        if (uncharted.instrument === "telescope") root.futureActivated()
+        else root.earlierActivated()
+      }
     }
   }
 
   UnchartedPlanet {
     // Releases are newest-first; the older unknown lies after the last one.
     virtualIndex: root.releases.length
+    instrument: "astrolabe"
   }
 
   UnchartedPlanet {
     // The newer unknown lies immediately before index zero.
     virtualIndex: -1
+    instrument: "telescope"
   }
 }

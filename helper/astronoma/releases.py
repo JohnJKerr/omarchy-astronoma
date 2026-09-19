@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from . import paths, versions
 
-REPO = "basecamp/omarchy"
+REPO = "omacom/omarchy"
 API = f"https://api.github.com/repos/{REPO}/releases"
 CACHE_SCHEMA = 1
 DEFAULT_TTL = 6 * 60 * 60  # Releases land a few times a week at most.
@@ -26,6 +26,7 @@ MAX_PAYLOAD_BYTES = 8 * 1024 * 1024
 MAX_CACHE_BYTES = 8 * 1024 * 1024
 MAX_RELEASES = 30
 MAX_RELEASE_STRING = 256 * 1024
+MAX_METADATA_STRING = 2048
 # Opening the panel asks for a refresh every time, and unauthenticated GitHub
 # allows 60 requests an hour. Releases do not land often enough for a second
 # fetch inside this window to return anything new.
@@ -75,13 +76,47 @@ class Release:
         )
 
 
+def _valid_release_fields(payload: dict, api: bool = False) -> bool:
+    """Validate the fields we consume before constructing display data.
+
+    GitHub may add unrelated API fields, so those are explicitly ignored;
+    every field crossing into Astronoma has an exact type and length budget.
+    """
+    names = {
+        "tag": "tag_name" if api else "tag",
+        "name": "name",
+        "publishedAt": "published_at" if api else "publishedAt",
+        "body": "body",
+        "url": "html_url" if api else "url",
+    }
+    for local_name, source_name in names.items():
+        value = payload.get(source_name)
+        # The API documents nullable name/body fields. The constructors turn
+        # those into empty strings, but no other scalar/container is accepted.
+        if value is None and local_name in ("name", "body"):
+            continue
+        limit = MAX_RELEASE_STRING if local_name == "body" else MAX_METADATA_STRING
+        if not isinstance(value, str) or len(value) > limit:
+            return False
+    return True
+
+
 def _read_cache() -> dict:
     try:
         data = paths.read_json(paths.releases_cache(), MAX_CACHE_BYTES)
     except (OSError, ValueError):
         return {}
-    if not (isinstance(data, dict) and set(data) == {"schema", "fetchedAt", "releases"}
-            and data.get("schema") == CACHE_SCHEMA and isinstance(data.get("fetchedAt"), int)):
+    required = {"schema", "fetchedAt", "releases"}
+    allowed = required | {"attemptedAt", "lastError"}
+    if not (isinstance(data, dict) and required <= set(data) <= allowed
+            and data.get("schema") == CACHE_SCHEMA
+            and type(data.get("fetchedAt")) is int and data["fetchedAt"] >= 0):
+        return {}
+    if ("attemptedAt" in data
+            and (type(data["attemptedAt"]) is not int or data["attemptedAt"] < 0)):
+        return {}
+    if ("lastError" in data
+            and (not isinstance(data["lastError"], str) or len(data["lastError"]) > 200)):
         return {}
     items = data.get("releases")
     required = {"tag", "name", "publishedAt", "body", "url"}
@@ -92,19 +127,27 @@ def _read_cache() -> dict:
         item for item in items
         if (isinstance(item, dict) and required <= set(item) <= allowed
             and all(isinstance(item[key], str) for key in item)
-            and len(item["body"]) <= MAX_RELEASE_STRING
-            and all(len(item[key]) <= 2048 for key in item if key != "body"))
+            and _valid_release_fields(item))
     ]
     return {**data, "releases": valid_items}
 
 
-def _write_cache(releases: list[Release]) -> None:
+def _write_cache(releases: list[Release], fetched_at: int | None = None,
+                 attempted_at: int | None = None, error: str = "") -> None:
+    now = int(time.time())
     payload = {
         "schema": CACHE_SCHEMA,
-        "fetchedAt": int(time.time()),
+        "fetchedAt": now if fetched_at is None else max(0, int(fetched_at)),
+        "attemptedAt": now if attempted_at is None else max(0, int(attempted_at)),
+        "lastError": str(error or "")[:200],
         "releases": [release.as_dict() for release in releases],
     }
-    paths.atomic_json_write(paths.releases_cache(), payload)
+    paths.atomic_json_write(paths.releases_cache(), payload, max_bytes=MAX_CACHE_BYTES)
+
+
+def reset_cache() -> None:
+    """Forget the fetched catalogue so the next load starts fresh."""
+    paths.unlink_private(paths.releases_cache())
 
 
 def _fetch(limit: int = 30, timeout: int = 15) -> list[Release]:
@@ -116,13 +159,31 @@ def _fetch(limit: int = 30, timeout: int = 15) -> list[Release]:
         },
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        raw = response.read(MAX_PAYLOAD_BYTES + 1)
+        chunks, total = [], 0
+        deadline = time.monotonic() + timeout
+        reader = getattr(response, "read1", None) or response.read
+        while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("release request exceeded its total deadline")
+            chunk = reader(min(65536, MAX_PAYLOAD_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_PAYLOAD_BYTES:
+                raise ValueError("releases payload too large")
+        raw = b"".join(chunks)
     if len(raw) > MAX_PAYLOAD_BYTES:
         raise ValueError("releases payload too large")
     payload = json.loads(raw.decode("utf-8"))
     if not isinstance(payload, list):
         raise ValueError("unexpected releases payload")
-    parsed = [Release.from_api(item) for item in payload if isinstance(item, dict)]
+    if len(payload) > min(MAX_RELEASES, max(0, int(limit))):
+        raise ValueError("too many releases in payload")
+    parsed = [
+        Release.from_api(item) for item in payload
+        if isinstance(item, dict) and _valid_release_fields(item, api=True)
+    ]
     return [release for release in parsed if release.tag]
 
 
@@ -144,27 +205,52 @@ def load(refresh: bool = False, ttl: int = DEFAULT_TTL,
         if isinstance(raw_cached, list) and isinstance(item, dict)
     ]
     fetched_at = int(cache.get("fetchedAt") or 0)
+    attempted_at = int(cache.get("attemptedAt") or fetched_at)
+    last_error = str(cache.get("lastError") or "")
     age = int(time.time()) - fetched_at if fetched_at else None
     expired = age is None or age > ttl
-    too_soon = age is not None and age < min_interval
+    attempt_age = int(time.time()) - attempted_at if attempted_at else None
+    too_soon = attempt_age is not None and attempt_age < min_interval
 
-    if (not refresh and not expired) or (refresh and too_soon and cached):
-        return cached, {"stale": False, "fetchedAt": fetched_at, "source": "cache"}
+    if not refresh or (too_soon and (cached or attempted_at)):
+        status = {"stale": expired, "fetchedAt": fetched_at, "source": "cache"}
+        if last_error:
+            status["error"] = last_error
+        return cached, status
 
     try:
         live = _fetch()
     except (urllib.error.URLError, OSError, ValueError, TimeoutError) as error:
+        message = _describe(error)
+        try:
+            _write_cache(cached, fetched_at=fetched_at,
+                         attempted_at=int(time.time()), error=message)
+        except (OSError, ValueError):
+            pass
         return cached, {
             "stale": True,
             "fetchedAt": fetched_at,
             "source": "cache",
-            "error": _describe(error),
+            "error": message,
         }
 
     if live:
-        _write_cache(live)
+        try:
+            _write_cache(live)
+        except (OSError, ValueError):
+            return cached, {
+                "stale": True, "fetchedAt": fetched_at, "source": "cache",
+                "error": "Could not update the release cache",
+            }
         return live, {"stale": False, "fetchedAt": int(time.time()), "source": "network"}
-    return cached, {"stale": True, "fetchedAt": fetched_at, "source": "cache"}
+    message = "GitHub returned no releases"
+    try:
+        _write_cache(cached, fetched_at=fetched_at,
+                     attempted_at=int(time.time()), error=message)
+    except (OSError, ValueError):
+        pass
+    return cached, {"stale": True, "fetchedAt": fetched_at,
+                    "source": "cache", "error": message}
 
 
 def _describe(error: Exception) -> str:
@@ -213,3 +299,29 @@ def recent(releases: list[Release], current: str | None, limit: int = 5) -> list
         pool = [r for r in releases if versions.release_key(r.version) <= current_key]
     ordered = sorted(pool, key=lambda r: versions.release_key(r.version), reverse=True)
     return ordered[: max(0, int(limit))]
+
+
+def upcoming(releases: list[Release], current: str | None) -> list[Release]:
+    """Published releases newer than the version installed on this machine."""
+    if not current:
+        return []
+    current_key = versions.release_key(current)
+    return sorted(
+        (release for release in releases
+         if versions.release_key(release.version) > current_key),
+        key=lambda release: versions.release_key(release.version),
+        reverse=True,
+    )
+
+
+def earlier(releases: list[Release], earliest: str | None) -> list[Release]:
+    """Published releases older than the first version in recorded history."""
+    if not earliest:
+        return []
+    earliest_key = versions.release_key(earliest)
+    return sorted(
+        (release for release in releases
+         if versions.release_key(release.version) < earliest_key),
+        key=lambda release: versions.release_key(release.version),
+        reverse=True,
+    )

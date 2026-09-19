@@ -38,6 +38,10 @@ draws the full view, and both simply render what the helper returns.
 - **A full flight log** — every captured update, the releases crossed with
   their notes rendered as safe plain text, migrations, warnings, errors, and a
   package breakdown.
+- **A look beyond the flight log** — the telescope beyond the current release
+  opens published releases newer than this machine, while the astrolabe before
+  recorded history opens releases older than its earliest known version. Both
+  use major, minor, and patch-sized planets and have explicit empty states.
 - **Update history that survives reboots.** The `/tmp` transcript is gone
   after a restart, so parsed records are kept in
   `~/.local/state/omarchy-updates/`.
@@ -121,6 +125,24 @@ cd omarchy-astronoma
 
 Omit `--enable-agent-summaries` to keep the default in-product consent flow.
 
+To test that flow again without deleting captured update history or the
+release cache, reinstall with `--reset-agent-summaries`. This clears generated
+summaries, agent consent, and the selected provider:
+
+```bash
+./install.sh --reset-agent-summaries
+```
+
+To recreate the first-install discovery experience, use `--reset-history`.
+It clears reconstructed records, their generated summaries, read state, and
+the GitHub release cache, then rebuilds the flight log from the update evidence
+still available on this machine. The latest recovered update appears unread in
+the bar. Agent consent and provider choice are retained:
+
+```bash
+./install.sh --reset-history
+```
+
 `install.sh` copies rather than symlinks on purpose: a symlinked plugin
 directory does not hot-reload, and the shell will keep running stale QML.
 
@@ -149,9 +171,11 @@ once an update has been read. The flight log is still loaded and reachable:
 
 - **Bar icon**: left = summary card, right = full flight log, middle =
   refresh.
-- **Card**: `f` opens the flight log, `r` refreshes, Esc closes.
-- **Flight log**: `↑`/`↓` or `j`/`k` move through history, `p` jumps to the
-  package breakdown, `r` refreshes, Esc closes.
+- **Card**: `↑`/`↓` scroll, Page Up/Page Down scroll a whole page, `f` opens
+  the flight log, `r` refreshes, Esc closes.
+- **Flight log and release pages**: `↑`/`↓` scroll, Page Up/Page Down scroll
+  a whole page, `j`/`k` move through update history, `p` jumps to the package
+  breakdown, `r` refreshes, Esc closes.
 - **IPC**: `omarchy-shell astronoma <open|close|toggle|refresh>` for the
   flight log, `omarchy-shell astronoma.bar <open|close|toggle|refresh|status>`
   for the card. These targets are why the manifest sets `keepLoaded`: a
@@ -245,7 +269,8 @@ bin/astronoma history         # captured updates, newest first
 bin/astronoma show <id>       # one update in full
 bin/astronoma releases        # Omarchy releases (--refresh to fetch)
 bin/astronoma agents          # which agent CLIs are installed
-bin/astronoma agent-summaries # consent status; add enable or disable
+bin/astronoma agent-summaries # consent status; add enable, disable, or reset
+bin/astronoma reset-history   # rediscover updates and clear the release cache
 bin/astronoma summarise [id]  # impact summary via an installed agent
 bin/astronoma seen [id]       # mark an update as read
 ```
@@ -255,7 +280,7 @@ Add `--pretty` to any of them.
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 70 tests, no dependencies
+python3 -m unittest discover -s tests -t .   # no external dependencies
 omarchy plugin validate .                    # manifest against the schema
 ./install.sh && omarchy-restart-shell        # install and reload
 ```

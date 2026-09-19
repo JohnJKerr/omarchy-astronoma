@@ -1,4 +1,5 @@
 import QtQuick
+import "Model.js" as Model
 
 // Runs the `astronoma` helper and holds the result.
 //
@@ -30,17 +31,24 @@ Item {
   readonly property var latest: report && report.latest ? report.latest : null
   readonly property var historyRows: report && report.history ? report.history : []
   readonly property var recentReleases: report && report.releases ? (report.releases.recent || []) : []
+  readonly property var upcomingReleases: report && report.releases ? (report.releases.upcoming || []) : []
+  readonly property var earlierReleases: report && report.releases ? (report.releases.earlier || []) : []
+  readonly property string earliestRecorded: report && report.releases
+    ? String(report.releases.earliestRecorded || "") : ""
   readonly property var releaseStatus: report && report.releases ? (report.releases.status || ({})) : ({})
   readonly property var agents: report && report.agents ? report.agents : []
   readonly property bool hasAgent: agents.length > 0
+  readonly property var selectedAgent: report && report.selectedAgent ? report.selectedAgent : null
+  readonly property string pluginVersion: report && report.plugin
+    ? String(report.plugin.version || "") : ""
+  readonly property bool agentSelectionMissing: report && report.agentSelectionMissing === true
   readonly property bool agentSummariesEnabled: report && report.agentSummariesEnabled === true
+  readonly property string captureError: report ? String(report.captureError || "") : ""
+  readonly property string historyError: report ? String(report.historyError || "") : ""
+  readonly property string problem: lastError || captureError || historyError
   readonly property string installed: report && report.omarchy ? (report.omarchy.installed || "") : ""
   readonly property string unreadId: report && report.unread ? String(report.unread) : ""
   readonly property bool hasUnread: unreadId !== ""
-  // Something worth putting in front of the user: a captured update, or
-  // failing that, release notes we can still show.
-  readonly property bool hasAnything: !!latest || recentReleases.length > 0
-
   signal loaded()
   signal summaryFinished(var payload)
 
@@ -80,15 +88,21 @@ Item {
     seenProcess.start(argv)
   }
 
-  function summarise(id, refresh, enable) {
+  function summarise(id, refresh, enable, agentKey) {
     if (summaryProcess.running) return
     summaryRunning = true
     var argv = [helper, "summarise"]
     if (id) argv.push(String(id))
     if (refresh) argv.push("--refresh")
     if (enable) argv.push("--enable")
+    if (agentKey) { argv.push("--agent"); argv.push(String(agentKey)) }
     argv.push("--pretty")
     summaryProcess.start(argv)
+  }
+
+  function selectAgent(agentKey) {
+    if (!agentKey || agentSelectionProcess.running) return
+    agentSelectionProcess.start([helper, "agent-summaries", "status", String(agentKey)])
   }
 
   property bool summaryRunning: false
@@ -100,7 +114,7 @@ Item {
       lastError = "Could not read the update report"
       return
     }
-    if (!parsed || typeof parsed !== "object") {
+    if (!Model.validReport(parsed)) {
       lastError = "Could not read the update report"
       return
     }
@@ -134,9 +148,18 @@ Item {
   }
 
   BoundedProcess {
+    id: agentSelectionProcess
+    maxStdoutChars: 4096
+    deadlineMs: 5000
+    onFinished: root.refresh(false)
+  }
+
+  BoundedProcess {
     id: summaryProcess
     maxStdoutChars: 512 * 1024
-    deadlineMs: 190000
+    // The helper's 190-second bound includes the agent's 180-second bound;
+    // leave another cleanup window before Quickshell stops the supervisor.
+    deadlineMs: 195000
     onFinished: function(exitCode, failure) {
       root.summaryRunning = false
       var payload = null

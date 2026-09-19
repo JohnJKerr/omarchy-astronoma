@@ -9,21 +9,28 @@
 #   ./install.sh --no-enable   install without touching the bar layout
 #   ./install.sh --menu        also add a row to the Omarchy menu
 #   ./install.sh --enable-agent-summaries  pre-accept the optional AI feature
+#   ./install.sh --reset-agent-summaries   clear summaries and restore first-run consent
+#   ./install.sh --reset-history           rediscover updates and mark them unread
 
 set -euo pipefail
 
 PLUGIN_ID="io.github.johnjkerr.astronoma"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
+TARGET_PARENT="$(dirname -- "$TARGET_DIR")"
 ENABLE=1
 MENU=0
 AGENT_SUMMARIES=0
+RESET_AGENT_SUMMARIES=0
+RESET_HISTORY=0
 
 for arg in "$@"; do
   case "$arg" in
     --no-enable) ENABLE=0 ;;
     --menu) MENU=1 ;;
     --enable-agent-summaries) AGENT_SUMMARIES=1 ;;
+    --reset-agent-summaries) RESET_AGENT_SUMMARIES=1 ;;
+    --reset-history) RESET_HISTORY=1 ;;
     *)
       echo "Unknown option: $arg" >&2
       exit 2
@@ -31,9 +38,33 @@ for arg in "$@"; do
   esac
 done
 
+if (( AGENT_SUMMARIES && RESET_AGENT_SUMMARIES )); then
+  echo "--enable-agent-summaries and --reset-agent-summaries cannot be used together." >&2
+  exit 2
+fi
+
 command -v python3 >/dev/null || {
   echo "Astronoma needs python3, which is not on PATH." >&2
   exit 1
+}
+
+validate_target() {
+  local config_root target_real expected
+  config_root="$(realpath -m -- "${XDG_CONFIG_HOME:-$HOME/.config}")"
+  target_real="$(realpath -m -- "$TARGET_DIR")"
+  expected="$config_root/omarchy/plugins/$PLUGIN_ID"
+  if [[ $target_real != "$expected" || -L $TARGET_DIR ]]; then
+    echo "Refusing unsafe plugin target: $TARGET_DIR" >&2
+    exit 1
+  fi
+}
+
+validate_target
+
+remove_tree() {
+  PYTHONPATH="$SOURCE_DIR/helper" python3 -c \
+    'import sys; from pathlib import Path; from astronoma import paths; paths.remove_private_tree(Path(sys.argv[1]))' \
+    "$1"
 }
 
 # Running the installed copy of this script would otherwise remove its own
@@ -45,9 +76,23 @@ if [[ $(realpath -m -- "$SOURCE_DIR") == $(realpath -m -- "$TARGET_DIR") ]]; the
 fi
 
 echo "Installing Astronoma to $TARGET_DIR"
-# A symlinked plugin does not hot-reload, so always install a real copy.
-rm -rf "$TARGET_DIR"
-mkdir -p "$TARGET_DIR"
+mkdir -p "$TARGET_PARENT"
+validate_target
+PYTHONPATH="$SOURCE_DIR/helper" python3 -c \
+  'import sys; from pathlib import Path; from astronoma import paths; paths.private_directory(Path(sys.argv[1]))' \
+  "$TARGET_PARENT"
+
+# Build and validate a complete sibling before replacing the installed copy.
+# A failed copy therefore leaves the previous working plugin untouched.
+STAGING_DIR="$(mktemp -d "$TARGET_PARENT/.astronoma-install.XXXXXXXX")"
+BACKUP_DIR=""
+cleanup_install() {
+  [[ -z $STAGING_DIR || ! -e $STAGING_DIR ]] || remove_tree "$STAGING_DIR"
+  if [[ -n $BACKUP_DIR && -e $BACKUP_DIR && ! -e $TARGET_DIR ]]; then
+    mv -- "$BACKUP_DIR" "$TARGET_DIR"
+  fi
+}
+trap cleanup_install EXIT
 # Every entry is spelled absolutely. A bare `./*.qml` here would glob against
 # whatever directory the user ran the script from, so installing from anywhere
 # but the checkout silently copied no QML at all and produced a plugin the
@@ -58,26 +103,50 @@ for entry in "$SOURCE_DIR"/manifest.json "$SOURCE_DIR"/README.md \
              "$SOURCE_DIR"/assets "$SOURCE_DIR"/bin "$SOURCE_DIR"/helper \
              "$SOURCE_DIR"/*.qml; do
   if [[ -e $entry ]]; then
-    cp -r "$entry" "$TARGET_DIR/"
+    cp -r -- "$entry" "$STAGING_DIR/"
   fi
 done
 # Bytecode from the developer's interpreter has no business in a plugin
 # directory the shell trusts, and a stale .pyc outlives the .py it came from.
-find "$TARGET_DIR" -name __pycache__ -type d -prune -exec rm -rf {} +
+find "$STAGING_DIR" -name __pycache__ -type d -prune -exec rm -rf {} +
 
 # A plugin missing its entry points installs and enables perfectly happily,
 # then fails to load with nothing but a line on the shell's console. Refuse
 # here instead, while there is still someone to tell.
 for required in manifest.json BarWidget.qml Flightlog.qml Model.js bin/astronoma; do
-  if [[ ! -f $TARGET_DIR/$required ]]; then
-    echo "Install is incomplete: $required did not make it to $TARGET_DIR" >&2
+  if [[ ! -f $STAGING_DIR/$required ]]; then
+    echo "Install is incomplete: $required did not make it to the staged copy" >&2
     exit 1
   fi
 done
-chmod +x "$TARGET_DIR/bin/astronoma" "$TARGET_DIR/bin/astronoma-supervisor" \
-         "$TARGET_DIR/bin/astronoma-menu-entry"
-if [[ -f $TARGET_DIR/uninstall.sh ]]; then
-  chmod +x "$TARGET_DIR/uninstall.sh"
+python3 -m json.tool "$STAGING_DIR/manifest.json" >/dev/null
+chmod +x "$STAGING_DIR/bin/astronoma" "$STAGING_DIR/bin/astronoma-supervisor" \
+         "$STAGING_DIR/bin/astronoma-menu-entry"
+if [[ -f $STAGING_DIR/uninstall.sh ]]; then
+  chmod +x "$STAGING_DIR/uninstall.sh"
+fi
+
+if [[ -e $TARGET_DIR ]]; then
+  BACKUP_DIR="$(mktemp -d "$TARGET_PARENT/.astronoma-backup.XXXXXXXX")"
+  rmdir -- "$BACKUP_DIR"
+  mv -- "$TARGET_DIR" "$BACKUP_DIR"
+fi
+mv -- "$STAGING_DIR" "$TARGET_DIR"
+STAGING_DIR=""
+if [[ -n $BACKUP_DIR ]]; then
+  remove_tree "$BACKUP_DIR"
+  BACKUP_DIR=""
+fi
+trap - EXIT
+
+if (( RESET_AGENT_SUMMARIES )); then
+  "$TARGET_DIR/bin/astronoma" agent-summaries reset >/dev/null
+  echo "Agent summaries reset: generated summaries, consent, and provider choice were cleared."
+fi
+
+if (( RESET_HISTORY )); then
+  "$TARGET_DIR/bin/astronoma" reset-history >/dev/null
+  echo "Update history reset: local evidence will be rediscovered and shown as unread."
 fi
 
 if (( AGENT_SUMMARIES )); then

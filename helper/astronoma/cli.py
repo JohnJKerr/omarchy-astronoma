@@ -14,10 +14,20 @@ MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 
 
 def _emit(payload, pretty: bool) -> int:
-    encoded = (json.dumps(payload, indent=2 if pretty else None) + "\n").encode("utf-8")
-    if len(encoded) > MAX_OUTPUT_BYTES:
+    encoder = json.JSONEncoder(indent=2 if pretty else None)
+    chunks, total = [], 0
+    for piece in encoder.iterencode(payload):
+        encoded_piece = piece.encode("utf-8")
+        total += len(encoded_piece)
+        if total + 1 > MAX_OUTPUT_BYTES:
+            chunks = []
+            break
+        chunks.append(encoded_piece)
+    if not chunks:
         payload = {"ok": False, "error": "Report exceeds the output limit"}
         encoded = (json.dumps(payload) + "\n").encode("utf-8")
+    else:
+        encoded = b"".join(chunks) + b"\n"
     stream = getattr(sys.stdout, "buffer", sys.stdout)
     stream.write(encoded if stream is not sys.stdout else encoded.decode("utf-8"))
     ok = payload.get("ok", True) if isinstance(payload, dict) else True
@@ -68,10 +78,14 @@ def main(argv=None) -> int:
 
     sub.add_parser("agents", parents=[common], help="installed agent CLIs")
 
+    sub.add_parser("reset-history", parents=[common],
+                   help="clear derived update history and release cache")
+
     consent_cmd = sub.add_parser("agent-summaries", parents=[common],
                                  help="inspect or revoke agent-summary consent")
-    consent_cmd.add_argument("state", choices=("status", "enable", "disable"),
+    consent_cmd.add_argument("state", choices=("status", "enable", "disable", "reset"),
                              nargs="?", default="status")
+    consent_cmd.add_argument("agent", nargs="?", help="installed agent key to select")
 
     summarise_cmd = sub.add_parser("summarise", parents=[common], help="agent impact summary")
     summarise_cmd.add_argument("id", nargs="?", help="defaults to the latest update")
@@ -89,12 +103,17 @@ def main(argv=None) -> int:
         return _emit(capture.run(force=args.force), pretty)
 
     if args.command == "report":
+        capture_error = ""
         if not args.no_capture:
             # Capturing first is what makes a freshly finished update show up
             # the moment the panel is opened.
-            capture.run_if_changed()
+            capture_result = capture.run_if_changed()
+            capture_error = str(
+                capture_result.get("error") or capture_result.get("warning") or ""
+            )
         return _emit(
-            report.build(refresh=args.refresh, notes_limit=args.notes_limit), pretty
+            report.build(refresh=args.refresh, notes_limit=args.notes_limit,
+                         capture_error=capture_error), pretty
         )
 
     if args.command == "show":
@@ -126,10 +145,24 @@ def main(argv=None) -> int:
     if args.command == "agents":
         return _emit({"agents": agent.available()}, pretty)
 
+    if args.command == "reset-history":
+        summaries = agent.clear_summaries()
+        records = history.reset_captured()
+        releases_mod.reset_cache()
+        return _emit({"ok": True, "recordsRemoved": records,
+                      "summariesRemoved": summaries}, pretty)
+
     if args.command == "agent-summaries":
+        if args.state == "reset":
+            removed = agent.reset_first_run()
+            return _emit({"ok": True, "enabled": False,
+                          "selectedAgent": None, "summariesRemoved": removed}, pretty)
+        if args.agent and not agent.set_preferred(args.agent):
+            return _emit({"ok": False, "error": "Selected agent is not available"}, pretty)
         if args.state != "status":
             agent.set_enabled(args.state == "enable")
-        return _emit({"ok": True, "enabled": agent.enabled()}, pretty)
+        return _emit({"ok": True, "enabled": agent.enabled(),
+                      "selectedAgent": agent.selected()}, pretty)
 
     if args.command == "summarise":
         if args.enable:

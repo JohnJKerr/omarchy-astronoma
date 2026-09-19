@@ -16,12 +16,18 @@ import "Model.js" as Model
 Item {
   id: root
 
-  property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property bool opened: false
   property int selectedIndex: 0
   property int selectedReleaseIndex: 0
+  property bool refreshDetailOnReport: false
   property string summaryError: ""
   property bool confirmingAgentEnable: false
+  property bool choosingAgent: false
+  property string chosenAgentKey: ""
+  property bool showingUpcoming: false
+  property bool showingEarlier: false
+  property int hoveredHistoryIndex: -1
+  readonly property bool showingReleaseCatalogue: showingUpcoming || showingEarlier
 
   // Shares the [menu] surface tokens, so a theme that styles the Omarchy
   // menu styles the flight log to match.
@@ -34,8 +40,9 @@ Item {
 
   readonly property var rows: service.historyRows
   readonly property bool hasRows: rows.length > 0
-  readonly property var selectedRow: hasRows && selectedIndex >= 0 && selectedIndex < rows.length
-    ? rows[selectedIndex] : null
+  readonly property bool initialLoading: root.opened && service.loading && !service.everLoaded
+  readonly property bool detailLoading: !root.initialLoading
+    && !root.showingReleaseCatalogue && detailService.loading
   // The detail pane renders `detail` when a specific update is loaded, and
   // falls back to the report's own latest so the first paint is never empty.
   readonly property var record: detailService.record
@@ -51,10 +58,39 @@ Item {
 
   function open(payloadJson) {
     root.opened = true
+    root.showingUpcoming = false
+    root.showingEarlier = false
     root.summaryError = ""
-    service.refresh(true)
+    root.refresh()
     if (!root.hasRows) root.selectedIndex = 0
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function refresh() {
+    refreshDetailOnReport = true
+    service.refresh(true)
+  }
+
+  function reconcileSelection() {
+    var refreshDetail = refreshDetailOnReport
+    refreshDetailOnReport = false
+    if (!hasRows) {
+      selectedIndex = 0
+      detailService.clear()
+      return
+    }
+    // A request may still be running for a newly selected row. Its identity
+    // takes precedence over the previous detail still displayed underneath.
+    var id = detailService.requestedId || detailService.loadedId
+    var index = rows.findIndex(function(row) { return String(row.id) === id })
+    selectedIndex = index >= 0 ? index : 0
+    var landed = rows[selectedIndex].omarchy && rows[selectedIndex].omarchy.to
+      ? String(rows[selectedIndex].omarchy.to) : ""
+    var releaseIndex = releaseIndexForVersion(landed)
+    if (releaseIndex >= 0) selectedReleaseIndex = releaseIndex
+    if (index < 0) detailService.clear()
+    if (opened && (refreshDetail || !detailService.record || index < 0))
+      detailService.load(rows[selectedIndex].id)
   }
 
   function close() {
@@ -103,10 +139,15 @@ Item {
   }
 
   function selectRelease(index) {
-    if (index < 0 || index >= solarReleases.length || index === selectedReleaseIndex) return
+    if (index < 0 || index >= solarReleases.length) return
+    // A planet is also the route back from either catalogue. Do this before
+    // the same-index guard: the currently selected release is still a valid
+    // navigation target when the telescope or astrolabe page is open.
+    showingUpcoming = false
+    showingEarlier = false
+    if (index === selectedReleaseIndex) return
     selectedReleaseIndex = index
-    rocketMark.ignited = true
-    launchTimer.restart()
+    igniteRocket()
     var version = String(solarReleases[index].version || "")
     for (var i = 0; i < rows.length; ++i) {
       var landed = rows[i].omarchy && rows[i].omarchy.to
@@ -118,24 +159,52 @@ Item {
     }
   }
 
+  function igniteRocket() {
+    rocketMark.ignited = true
+    launchTimer.restart()
+  }
+
+  function launchToHistory(index) {
+    if (index < 0 || index >= rows.length) return
+    igniteRocket()
+    select(index)
+  }
+
   function moveSelection(delta) {
     if (!hasRows) return
     select(Math.max(0, Math.min(rows.length - 1, selectedIndex + delta)))
   }
 
-  function scrollDetail(pages) {
-    if (!detailFlick) return
-    var maximum = Math.max(0, detailFlick.contentHeight - detailFlick.height)
-    var step = Math.max(Style.space(120), detailFlick.height * 0.85)
-    detailFlick.contentY = Math.max(0, Math.min(maximum,
-      detailFlick.contentY + pages * step))
+  function scrollDetail(amount) {
+    var view = root.showingReleaseCatalogue
+      ? root.cataloguePage() : detailFlick
+    if (!view) return
+    var maximum = Math.max(0, view.contentHeight - view.height)
+    view.contentY = Math.max(0, Math.min(maximum, view.contentY + amount))
+  }
+
+  function scrollDetailLine(direction) {
+    scrollDetail(direction * Style.space(40))
+  }
+
+  function scrollDetailPage(direction) {
+    var view = root.showingReleaseCatalogue
+      ? root.cataloguePage() : detailFlick
+    if (!view) return
+    scrollDetail(direction * view.height)
   }
 
   function scrollDetailToEnd(end) {
-    if (!detailFlick) return
-    detailFlick.contentY = end
-      ? Math.max(0, detailFlick.contentHeight - detailFlick.height)
+    var view = root.showingReleaseCatalogue
+      ? root.cataloguePage() : detailFlick
+    if (!view) return
+    view.contentY = end
+      ? Math.max(0, view.contentHeight - view.height)
       : 0
+  }
+
+  function cataloguePage() {
+    return root.showingEarlier ? earlierPageLoader.item : futurePageLoader.item
   }
 
   function showPackages(group) {
@@ -151,21 +220,28 @@ Item {
 
   function requestSummary(force) {
     if (!record || !service.hasAgent || detailService.summaryRunning) return
+    if (!root.chosenAgentKey) {
+      root.choosingAgent = true
+      return
+    }
     if (!service.agentSummariesEnabled && !root.confirmingAgentEnable) {
       root.confirmingAgentEnable = true
       return
     }
     summaryError = ""
-    detailService.summarise(record.id, force === true, !service.agentSummariesEnabled)
+    detailService.summarise(record.id, force === true,
+                            !service.agentSummariesEnabled, root.chosenAgentKey)
   }
 
   Service {
     id: service
     onLoaded: {
+      if (service.selectedAgent) root.chosenAgentKey = String(service.selectedAgent.key)
+      else if (service.agentSelectionMissing) root.chosenAgentKey = ""
       // Reading the list is what marks the newest update read, matching
       // the bar widget's card.
       if (root.opened && service.hasUnread) service.markSeen(service.unreadId)
-      if (root.opened && root.hasRows && !detailService.record) root.select(root.selectedIndex)
+      root.reconcileSelection()
     }
   }
 
@@ -181,13 +257,30 @@ Item {
   Service {
     id: detailService
     property var record: null
+    property string detailError: ""
     property string loadedId: ""
     property string requestedId: ""
     property string activeId: ""
 
+    function clear() {
+      requestedId = ""
+      loadedId = ""
+      record = null
+      detailError = ""
+      loading = false
+    }
+
     function load(id) {
       if (!id) return
       requestedId = String(id)
+      detailError = ""
+      if (requestedId !== loadedId) {
+        detailService.loading = true
+        // The loading surface covers the previous update. Keep its detail
+        // tree alive underneath until the replacement is ready: tearing down
+        // a large release synchronously here can prevent the solar-system
+        // selection animation from painting its first frame.
+      }
       if (detailProcess.running) return
       activeId = requestedId
       detailProcess.start([detailService.helper, "show", activeId, "--pretty"])
@@ -196,19 +289,25 @@ Item {
     BoundedProcess {
       id: detailProcess
       onFinished: function(exitCode, failure) {
-        if (failure) detailService.record = null
-        else if (detailService.activeId === detailService.requestedId) {
-          if (exitCode !== 0) detailService.record = null
+        if (detailService.activeId === detailService.requestedId) {
+          if (failure || exitCode !== 0) {
+            detailService.record = null
+            detailService.detailError = failure === "timeout"
+              ? "Update details timed out" : "Could not load update details"
+          }
           else try {
             var parsed = JSON.parse(detailProcess.stdoutText)
-            detailService.record = parsed && parsed.ok ? parsed : null
+            detailService.record = Model.validDetail(parsed, detailService.activeId) ? parsed : null
             if (detailService.record) detailService.loadedId = detailService.activeId
+            else detailService.detailError = "Could not read update details"
           } catch (error) {
             detailService.record = null
+            detailService.detailError = "Could not read update details"
           }
         }
-        if (detailService.requestedId !== detailService.activeId)
+        if (detailService.requestedId && detailService.requestedId !== detailService.activeId)
           Qt.callLater(function() { detailService.load(detailService.requestedId) })
+        else detailService.loading = false
       }
     }
 
@@ -230,7 +329,7 @@ Item {
     function open(): void { root.open("{}") }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
-    function refresh(): string { service.refresh(true); return "ok" }
+    function refresh(): string { root.refresh(); return "ok" }
   }
 
   PanelWindow {
@@ -275,19 +374,28 @@ Item {
         focus: true
 
         Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) { root.close(); event.accepted = true }
-          else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) { root.moveSelection(1); event.accepted = true }
-          else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) { root.moveSelection(-1); event.accepted = true }
-          else if (event.key === Qt.Key_PageDown) { root.scrollDetail(1); event.accepted = true }
-          else if (event.key === Qt.Key_PageUp) { root.scrollDetail(-1); event.accepted = true }
+          if (event.key === Qt.Key_Escape) {
+            if (root.showingReleaseCatalogue) {
+              root.showingUpcoming = false
+              root.showingEarlier = false
+            }
+            else root.close()
+            event.accepted = true
+          }
+          else if (event.key === Qt.Key_Down) { root.scrollDetailLine(1); event.accepted = true }
+          else if (event.key === Qt.Key_Up) { root.scrollDetailLine(-1); event.accepted = true }
+          else if (!root.showingReleaseCatalogue && event.key === Qt.Key_J) { root.moveSelection(1); event.accepted = true }
+          else if (!root.showingReleaseCatalogue && event.key === Qt.Key_K) { root.moveSelection(-1); event.accepted = true }
+          else if (event.key === Qt.Key_PageDown) { root.scrollDetailPage(1); event.accepted = true }
+          else if (event.key === Qt.Key_PageUp) { root.scrollDetailPage(-1); event.accepted = true }
           else if (event.key === Qt.Key_Space) {
-            root.scrollDetail((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+            root.scrollDetailPage((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
             event.accepted = true
           }
           else if (event.key === Qt.Key_Home) { root.scrollDetailToEnd(false); event.accepted = true }
           else if (event.key === Qt.Key_End) { root.scrollDetailToEnd(true); event.accepted = true }
-          else if (event.key === Qt.Key_R) { service.refresh(true); event.accepted = true }
-          else if (event.key === Qt.Key_P) { root.showPackages(packageSection.group); event.accepted = true }
+          else if (event.key === Qt.Key_R) { root.refresh(); event.accepted = true }
+          else if (!root.showingReleaseCatalogue && event.key === Qt.Key_P) { root.showPackages(packageSection.group); event.accepted = true }
           // Summarising deliberately has no single-key shortcut. This surface
           // takes exclusive keyboard focus, so one stray key would otherwise
           // spend an agent run the user never asked for.
@@ -299,8 +407,70 @@ Item {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
+            clip: true
             implicitHeight: Math.max(rocketMark.implicitHeight, titleColumn.implicitHeight,
                                      releaseSystem.visible ? releaseSystem.implicitHeight : 0)
+
+            // A quiet star field gives the flight-deck header some depth
+            // without competing with the release navigator. Fixed positions
+            // keep the scene stable; varied cycles stop the twinkle from
+            // looking synchronized.
+            Item {
+              id: starField
+              anchors.fill: parent
+              z: -1
+
+              readonly property var stars: [
+                { x: 0.02, y: 0.16, size: 2, low: 0.10, high: 0.48, rise: 920, fall: 1380 },
+                { x: 0.09, y: 0.72, size: 1, low: 0.14, high: 0.56, rise: 1450, fall: 980 },
+                { x: 0.18, y: 0.24, size: 1, low: 0.08, high: 0.42, rise: 1180, fall: 1720 },
+                { x: 0.27, y: 0.82, size: 2, low: 0.10, high: 0.38, rise: 1740, fall: 1120 },
+                { x: 0.34, y: 0.12, size: 1, low: 0.12, high: 0.58, rise: 1040, fall: 1510 },
+                { x: 0.41, y: 0.58, size: 1, low: 0.08, high: 0.44, rise: 1580, fall: 1240 },
+                { x: 0.48, y: 0.30, size: 2, low: 0.10, high: 0.50, rise: 1320, fall: 1860 },
+                { x: 0.55, y: 0.76, size: 1, low: 0.12, high: 0.54, rise: 1880, fall: 1050 },
+                { x: 0.62, y: 0.10, size: 1, low: 0.08, high: 0.40, rise: 1260, fall: 1580 },
+                { x: 0.68, y: 0.48, size: 2, low: 0.10, high: 0.46, rise: 1520, fall: 1180 },
+                { x: 0.74, y: 0.86, size: 1, low: 0.14, high: 0.52, rise: 980, fall: 1690 },
+                { x: 0.80, y: 0.20, size: 1, low: 0.08, high: 0.48, rise: 1640, fall: 1360 },
+                { x: 0.86, y: 0.64, size: 2, low: 0.10, high: 0.42, rise: 1120, fall: 1780 },
+                { x: 0.92, y: 0.08, size: 1, low: 0.12, high: 0.56, rise: 1820, fall: 1080 },
+                { x: 0.97, y: 0.78, size: 1, low: 0.08, high: 0.44, rise: 1380, fall: 1480 }
+              ]
+
+              Repeater {
+                model: starField.stars
+
+                Rectangle {
+                  id: star
+                  required property var modelData
+                  x: Math.round(modelData.x * (starField.width - width))
+                  y: Math.round(modelData.y * (starField.height - height))
+                  width: Style.space(modelData.size)
+                  height: width
+                  radius: width / 2
+                  color: root.foreground
+                  opacity: modelData.low
+
+                  SequentialAnimation on opacity {
+                    running: window.visible
+                    loops: Animation.Infinite
+                    NumberAnimation {
+                      from: star.modelData.low
+                      to: star.modelData.high
+                      duration: star.modelData.rise
+                      easing.type: Easing.InOutSine
+                    }
+                    NumberAnimation {
+                      from: star.modelData.high
+                      to: star.modelData.low
+                      duration: star.modelData.fall
+                      easing.type: Easing.InOutSine
+                    }
+                  }
+                }
+              }
+            }
 
             Rocket {
               id: rocketMark
@@ -311,6 +481,8 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               foreground: Color.accent
               cellSize: Style.font.bodySmall
+              engineWarm: root.hoveredHistoryIndex >= 0
+                || releaseSystem.actionableHovered
             }
 
             Column {
@@ -335,6 +507,7 @@ Item {
                   var suffix = service.installed ? " · Omarchy " + service.installed : ""
                   return "The flight log" + suffix
                 }
+                textFormat: Text.PlainText
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -349,11 +522,31 @@ Item {
               height: implicitHeight
               releases: root.solarReleases
               selectedIndex: Math.min(root.selectedReleaseIndex, Math.max(0, root.solarReleases.length - 1))
+              futureSelected: root.showingUpcoming
+              earlierSelected: root.showingEarlier
               foreground: root.foreground
               accent: Color.accent
               fontFamily: root.fontFamily
               visible: root.solarReleases.length > 0
               onReleaseActivated: function(index) { root.selectRelease(index) }
+              onFutureActivated: {
+                root.igniteRocket()
+                root.showingEarlier = false
+                root.showingUpcoming = true
+                Qt.callLater(function() {
+                  var page = root.cataloguePage()
+                  if (page) page.contentY = 0
+                })
+              }
+              onEarlierActivated: {
+                root.igniteRocket()
+                root.showingUpcoming = false
+                root.showingEarlier = true
+                Qt.callLater(function() {
+                  var page = root.cataloguePage()
+                  if (page) page.contentY = 0
+                })
+              }
             }
           }
 
@@ -367,16 +560,45 @@ Item {
         }
 
         // ---------------------------------------------------- footer
-        Text {
+        Item {
             id: footer
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            text: "↑↓ select · pgup/pgdn or space scroll · home/end jump · p packages · r refresh · esc close"
-            color: root.faint
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            horizontalAlignment: Text.AlignHCenter
+            implicitHeight: footerColumn.implicitHeight
+            height: implicitHeight
+
+            Column {
+              id: footerColumn
+              width: parent.width
+              spacing: Style.space(2)
+
+              Text {
+                id: footerHint
+                width: parent.width
+                text: root.showingReleaseCatalogue
+                  ? "↑↓ scroll · pgup/pgdn or space scroll page · home/end jump · r refresh · esc flight log"
+                  : "↑↓ scroll · j/k select · pgup/pgdn or space scroll page · home/end jump · p packages · r refresh · esc close"
+                textFormat: Text.PlainText
+                color: root.faint
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+              }
+
+              Text {
+                id: versionLabel
+                visible: service.pluginVersion !== ""
+                width: parent.width
+                text: "Astronoma v" + service.pluginVersion
+                textFormat: Text.PlainText
+                color: root.faint
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                horizontalAlignment: Text.AlignHCenter
+              }
+            }
         }
 
         // ------------------------------------------- list + detail
@@ -393,7 +615,7 @@ Item {
               id: listPane
               width: Math.round(parent.width * 0.32)
               height: parent.height
-              visible: root.hasRows
+              visible: root.hasRows && !root.showingReleaseCatalogue
 
               Column {
                 anchors.fill: parent
@@ -421,15 +643,57 @@ Item {
 
                     Repeater {
                       model: root.rows
-                      HistoryRow {
+                      Row {
+                        id: historyEntry
                         required property var modelData
                         required property int index
                         width: listColumn.width
-                        row: modelData
-                        selected: index === root.selectedIndex
-                        foreground: root.foreground
-                        fontFamily: root.fontFamily
-                        onActivated: root.select(index)
+                        spacing: Style.space(8)
+
+                        HoverHandler {
+                          cursorShape: Qt.PointingHandCursor
+                          onHoveredChanged: {
+                            if (hovered) root.hoveredHistoryIndex = historyEntry.index
+                            else if (root.hoveredHistoryIndex === historyEntry.index) {
+                              root.hoveredHistoryIndex = -1
+                            }
+                          }
+                        }
+
+                        HistoryRow {
+                          width: parent.width - historyPlanetSlot.width - parent.spacing
+                          anchors.verticalCenter: parent.verticalCenter
+                          row: historyEntry.modelData
+                          selected: historyEntry.index === root.selectedIndex
+                          foreground: root.foreground
+                          fontFamily: root.fontFamily
+                          onActivated: root.launchToHistory(historyEntry.index)
+                        }
+
+                        Item {
+                          id: historyPlanetSlot
+                          readonly property bool hasRelease: !!historyEntry.modelData.omarchy
+                            && !!historyEntry.modelData.omarchy.to
+                          width: Style.space(64)
+                          height: Style.space(64)
+
+                          ReleasePlanet {
+                            anchors.centerIn: parent
+                            visible: historyPlanetSlot.hasRelease
+                            release: ({
+                              version: visible
+                                ? String(historyEntry.modelData.omarchy.to) : ""
+                            })
+                          }
+
+                          MouseArea {
+                            anchors.fill: parent
+                            enabled: historyPlanetSlot.hasRelease
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.launchToHistory(historyEntry.index)
+                          }
+                        }
                       }
                     }
                   }
@@ -438,7 +702,7 @@ Item {
             }
 
             PanelSeparator {
-              visible: root.hasRows
+              visible: root.hasRows && !root.showingReleaseCatalogue
               x: listPane.width + Style.space(14)
               width: 1
               height: parent.height
@@ -448,6 +712,7 @@ Item {
             // ------------------------------------------------ detail
             Flickable {
               id: detailFlick
+              visible: !root.showingReleaseCatalogue
               x: root.hasRows ? listPane.width + Style.space(30) : 0
               width: parent.width - x
               height: parent.height
@@ -462,6 +727,28 @@ Item {
                 id: detailColumn
                 width: detailFlick.width - Style.space(10)
                 spacing: Style.space(14)
+
+                Text {
+                  visible: service.problem !== ""
+                  width: parent.width
+                  text: service.problem + ". Press R to retry."
+                  textFormat: Text.PlainText
+                  color: Color.urgent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  wrapMode: Text.WordWrap
+                }
+
+                Text {
+                  visible: detailService.detailError !== ""
+                  width: parent.width
+                  text: detailService.detailError + ". Press R to retry."
+                  textFormat: Text.PlainText
+                  color: Color.urgent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  wrapMode: Text.WordWrap
+                }
 
                 // -------------------------------------- headline
                 Column {
@@ -491,7 +778,7 @@ Item {
                   }
 
                   Text {
-                    visible: !root.record
+                    visible: !root.record && service.problem === ""
                     width: parent.width
                     text: service.everLoaded
                       ? "Astronoma has not captured an update on this machine yet. It will record the next one automatically — here is what changed in Omarchy recently."
@@ -603,7 +890,7 @@ Item {
                   PanelSeparator { foreground: root.foreground }
 
                   PanelSectionHeader {
-                    text: "WHAT THIS MEANS FOR YOU"
+                    text: "YOUR PERSONALISED SUMMARY"
                     foreground: root.foreground
                     fontFamily: root.fontFamily
                   }
@@ -633,21 +920,85 @@ Item {
                     wrapMode: Text.WordWrap
                   }
 
-                  Button {
-                    width: Math.min(parent.width, Style.space(320))
-                    bordered: true
-                    foreground: root.foreground
-                    fontFamily: root.fontFamily
-                    enabled: !detailService.summaryRunning
-                    text: {
-                      if (detailService.summaryRunning) return "Summarising…"
-                      if (!service.agentSummariesEnabled)
-                        return root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries"
-                      var has = root.record && root.record.summary && root.record.summary.text
-                      return has ? "Summarise again" : "Summarise what changed for me"
+                  Row {
+                    width: Math.min(parent.width, Style.space(460))
+                    spacing: Style.space(8)
+
+                    Item {
+                      id: summaryActionSlot
+                      width: parent.width - agentChoice.width - parent.spacing
+                      height: summaryAction.implicitHeight
+
+                      Button {
+                        id: summaryAction
+                        anchors.fill: parent
+                        bordered: true
+                        foreground: enabled ? root.foreground : root.faint
+                        background: enabled ? "transparent"
+                          : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.035)
+                        fontFamily: root.fontFamily
+                        enabled: !detailService.summaryRunning && root.chosenAgentKey !== ""
+                        opacity: enabled ? 1 : 0.48
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                        text: {
+                          if (detailService.summaryRunning) return "Summarising…"
+                          if (!service.agentSummariesEnabled)
+                            return root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries"
+                          return "Summarise"
+                        }
+                        onClicked: root.requestSummary(
+                          !!(root.record && root.record.summary && root.record.summary.text))
+                      }
+
+                      MouseArea {
+                        id: disabledSummaryHover
+                        anchors.fill: parent
+                        enabled: !summaryAction.enabled && !detailService.summaryRunning
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
+                        cursorShape: Qt.ArrowCursor
+                      }
+
+                      PanelToolTip {
+                        visible: disabledSummaryHover.containsMouse
+                        text: "Choose an AI provider before enabling summaries."
+                        fontFamily: root.fontFamily
+                      }
                     }
-                    onClicked: root.requestSummary(
-                      !!(root.record && root.record.summary && root.record.summary.text))
+
+                    Button {
+                      id: agentChoice
+                      width: Style.space(160)
+                      foreground: root.foreground
+                      fontFamily: root.fontFamily
+                      text: root.chosenAgentKey
+                        ? (service.agents.find(function(item) { return item.key === root.chosenAgentKey }) || {name: "Choose AI provider"}).name + " ▾"
+                        : "Choose AI provider ▾"
+                      onClicked: root.choosingAgent = !root.choosingAgent
+                    }
+                  }
+
+                  Column {
+                    visible: root.choosingAgent
+                    width: Math.min(parent.width, Style.space(460))
+                    spacing: Style.space(4)
+
+                    Repeater {
+                      model: service.agents
+                      Button {
+                        required property var modelData
+                        width: parent.width
+                        bordered: String(modelData.key) === root.chosenAgentKey
+                        foreground: root.foreground
+                        fontFamily: root.fontFamily
+                        text: String(modelData.name)
+                        onClicked: {
+                          root.chosenAgentKey = String(modelData.key)
+                          root.choosingAgent = false
+                          service.selectAgent(root.chosenAgentKey)
+                        }
+                      }
+                    }
                   }
 
                   Text {
@@ -664,8 +1015,9 @@ Item {
                     visible: detailService.summaryRunning
                     width: parent.width
                     text: "Running "
-                      + (service.agents.length ? service.agents[0].name : "the agent")
+                      + (service.agents.find(function(item) { return item.key === root.chosenAgentKey }) || {name: "the agent"}).name
                       + " over this update. This can take a minute."
+                    textFormat: Text.PlainText
                     color: root.faint
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -706,15 +1058,30 @@ Item {
                         wrapMode: Text.WordWrap
                       }
 
-                      Text {
-                        visible: text !== ""
+                      Loader {
+                        id: releaseBodyLoader
                         width: parent.width
-                        text: Model.cleanReleaseBody(modelData.body)
-                        color: Qt.darker(root.foreground, 1.15)
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.bodySmall
+                        active: String(modelData.body || "") !== ""
+                        asynchronous: true
+
+                        sourceComponent: Text {
+                          width: releaseBodyLoader.width
+                          text: Model.cleanReleaseBody(modelData.body)
+                          color: Qt.darker(root.foreground, 1.15)
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.bodySmall
+                          textFormat: Text.PlainText
+                          wrapMode: Text.WordWrap
+                        }
+                      }
+
+                      Text {
+                        visible: releaseBodyLoader.status === Loader.Loading
+                        text: "Rendering release notes…"
                         textFormat: Text.PlainText
-                        wrapMode: Text.WordWrap
+                        color: root.faint
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
                       }
                     }
                   }
@@ -749,6 +1116,79 @@ Item {
                   record: root.record
                   foreground: root.foreground
                   fontFamily: root.fontFamily
+                }
+              }
+            }
+
+            Loader {
+              id: futurePageLoader
+              anchors.fill: parent
+              active: root.showingUpcoming
+              visible: active
+              sourceComponent: FutureReleases {
+                releases: service.upcomingReleases
+                installed: service.installed
+                versionUnknown: service.report && service.report.omarchy
+                  ? service.report.omarchy.versionUnknown === true : false
+                isDev: service.report && service.report.omarchy
+                  ? service.report.omarchy.isDev === true : false
+                loading: service.loading && !service.everLoaded
+                status: service.releaseStatus
+                foreground: root.foreground
+                dim: root.dim
+                faint: root.faint
+                fontFamily: root.fontFamily
+                onBack: root.showingUpcoming = false
+              }
+            }
+
+            Loader {
+              id: earlierPageLoader
+              anchors.fill: parent
+              active: root.showingEarlier
+              visible: active
+              sourceComponent: FutureReleases {
+                releases: service.earlierReleases
+                earlier: true
+                boundary: service.earliestRecorded
+                loading: service.loading && !service.everLoaded
+                status: service.releaseStatus
+                foreground: root.foreground
+                dim: root.dim
+                faint: root.faint
+                fontFamily: root.fontFamily
+                onBack: root.showingEarlier = false
+              }
+            }
+
+            // Cover only the main body while its matching payload is read.
+            // The history menu and planet navigator stay visible and update
+            // immediately, so moving between releases still feels direct.
+            Rectangle {
+              x: detailFlick.x
+              width: detailFlick.width
+              height: parent.height
+              visible: root.initialLoading || root.detailLoading
+              z: 20
+              color: root.background
+
+              Column {
+                anchors.centerIn: parent
+                spacing: Style.space(8)
+
+                BusyIndicator {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  running: parent.parent.visible
+                }
+
+                Text {
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  text: root.initialLoading
+                    ? "Reading flight log…" : "Loading update…"
+                  textFormat: Text.PlainText
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
                 }
               }
             }

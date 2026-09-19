@@ -5,7 +5,7 @@ this returns. That keeps the shell-side code thin and means the whole
 view can be inspected from a terminal with `astronoma report`.
 """
 
-from . import agent, history, releases as releases_mod, versions
+from . import __version__, agent, history, releases as releases_mod, versions
 
 RECENT_RELEASE_COUNT = 5
 
@@ -27,7 +27,19 @@ def _crossed_for(catalogue, omarchy: dict):
     return releases_mod.crossed(catalogue, omarchy.get("from"), landed)
 
 
-def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
+def _earliest_recorded_version(records: list[dict]) -> str | None:
+    candidates = [
+        str(version)
+        for record in records
+        for version in ((record.get("omarchy") or {}).get("from"),
+                        (record.get("omarchy") or {}).get("to"))
+        if version
+    ]
+    return min(candidates, key=versions.release_key) if candidates else None
+
+
+def build(refresh: bool = False, notes_limit: int | None = None,
+          capture_error: str = "") -> dict:
     """The full view: latest update, history, and the releases behind them.
 
     Every section degrades on its own. No network yields cached notes; no
@@ -38,8 +50,9 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
     installed = versions.strip_pkgrel(installed_raw) if installed_raw else None
 
     catalogue, status = releases_mod.load(refresh=refresh)
-    records = history.all_records()
+    records, history_truncated = history.all_records_with_status()
     latest = records[0] if records else None
+    earliest = _earliest_recorded_version(records)
 
     def trim(entries: list[dict]) -> list[dict]:
         if notes_limit is None:
@@ -57,6 +70,7 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
 
     payload = {
         "schema": 1,
+        "plugin": {"version": __version__},
         "omarchy": {
             "installed": installed,
             "installedRaw": installed_raw,
@@ -68,15 +82,27 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
         },
         "releases": {
             "status": status,
+            "earliestRecorded": earliest,
             "recent": trim(_release_dicts(
                 releases_mod.recent(catalogue, installed, RECENT_RELEASE_COUNT)
+            )),
+            "upcoming": trim(_release_dicts(
+                releases_mod.upcoming(catalogue, installed)
+            )),
+            "earlier": trim(_release_dicts(
+                releases_mod.earlier(catalogue, earliest)
             )),
         },
         "history": [history.summary_row(record) for record in records],
         # Drives whether the bar asks for attention at all.
         "unread": history.unread_in(records),
         "agents": agent.available(),
+        "selectedAgent": agent.selected(),
+        "agentSelectionMissing": agent.preferred_key() is not None and agent.selected() is None,
         "agentSummariesEnabled": agent.enabled(),
+        "captureError": str(capture_error or "")[:200],
+        "historyError": ("Older update history exceeds the read limit"
+                         if history_truncated else ""),
         "latest": None,
     }
 
@@ -86,7 +112,10 @@ def build(refresh: bool = False, notes_limit: int | None = None) -> dict:
         payload["latest"] = {
             **latest,
             "crossed": trim(_release_dicts(crossed)),
-            "summary": agent.cached_summary(str(latest.get("id") or "")),
+            "summary": agent.cached_summary(
+                str(latest.get("id") or ""),
+                agent.evidence_hash(latest, _release_dicts(crossed)),
+            ),
         }
 
     return payload
@@ -105,7 +134,11 @@ def detail(identifier: str, refresh: bool = False) -> dict:
         **record,
         "crossed": _release_dicts(crossed),
         "releaseStatus": status,
-        "summary": agent.cached_summary(identifier),
+        "summary": agent.cached_summary(
+            identifier, agent.evidence_hash(record, _release_dicts(crossed))
+        ),
         "agents": agent.available(),
+        "selectedAgent": agent.selected(),
+        "agentSelectionMissing": agent.preferred_key() is not None and agent.selected() is None,
         "agentSummariesEnabled": agent.enabled(),
     }

@@ -74,7 +74,13 @@ def _open_directory(directory: Path, create: bool = False, private: bool = False
             except FileNotFoundError:
                 if not create:
                     raise
-                os.mkdir(name, 0o700 if private else 0o755, dir_fd=descriptor)
+                try:
+                    os.mkdir(name, 0o700 if private else 0o755, dir_fd=descriptor)
+                except FileExistsError:
+                    # Another Astronoma process may have created it after the
+                    # failed open. The descriptor open and checks below still
+                    # establish what won the race.
+                    pass
                 child = os.open(name, _DIR_FLAGS, dir_fd=descriptor)
             info = os.fstat(child)
             unsafe_writable = info.st_mode & 0o022 and not (info.st_mode & stat.S_ISVTX)
@@ -138,37 +144,126 @@ def read_bytes(target: Path, max_bytes: int, private: bool = True) -> bytes:
         os.close(parent)
 
 
-def read_json(target: Path, max_bytes: int, private: bool = True):
-    return json.loads(read_bytes(target, max_bytes, private).decode("utf-8"))
+def read_trusted_leaf(target: Path, max_bytes: int,
+                      allowed_owners: tuple[int, ...]) -> bytes:
+    """Read one bounded regular leaf without following it."""
+    descriptor = os.open(target, _FILE_FLAGS)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid not in allowed_owners:
+            raise PermissionError(f"untrusted regular file: {target}")
+        if info.st_size > max_bytes:
+            raise ValueError(f"file exceeds {max_bytes} byte limit")
+        chunks, total = [], 0
+        while True:
+            chunk = os.read(descriptor, min(65536, max_bytes + 1 - total))
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > max_bytes:
+                raise ValueError(f"file exceeds {max_bytes} byte limit")
+    finally:
+        os.close(descriptor)
 
 
-def json_within_limits(value, max_items: int, max_string: int, max_depth: int = 8) -> bool:
-    """Reject JSON shapes capable of inflating work after a bounded read."""
-    remaining = max_items
+def read_user_config(target: Path, max_bytes: int) -> tuple[bytes, int]:
+    """Read a user-owned config leaf below descriptor-verified ancestors."""
+    parent = _open_directory(target.parent)
+    try:
+        descriptor = _open_regular(parent, target.name, max_bytes, private=False)
+        try:
+            info = os.fstat(descriptor)
+            if info.st_mode & 0o022:
+                raise PermissionError(f"config file is writable by other users: {target}")
+            chunks, total = [], 0
+            while True:
+                chunk = os.read(descriptor, min(65536, max_bytes + 1 - total))
+                if not chunk:
+                    return b"".join(chunks), stat.S_IMODE(info.st_mode)
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError(f"file exceeds {max_bytes} byte limit")
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(parent)
 
-    def visit(item, depth):
-        nonlocal remaining
-        remaining -= 1
-        if remaining < 0 or depth > max_depth:
-            return False
-        if isinstance(item, str):
-            return len(item) <= max_string
-        if isinstance(item, list):
-            return all(visit(child, depth + 1) for child in item)
-        if isinstance(item, dict):
-            return all(isinstance(key, str) and len(key) <= 80
-                       and visit(child, depth + 1) for key, child in item.items())
-        return item is None or isinstance(item, (bool, int, float))
 
-    return visit(value, 0)
+def trusted_leaf_identity(target: Path, allowed_owners: tuple[int, ...]) -> list[int] | None:
+    """Describe a trusted regular leaf without following it; missing is None."""
+    try:
+        descriptor = os.open(target, _FILE_FLAGS)
+    except FileNotFoundError:
+        return None
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid not in allowed_owners:
+            raise PermissionError(f"untrusted regular file: {target}")
+        return [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns]
+    finally:
+        os.close(descriptor)
+
+
+def _json_depth_within(raw: bytes, max_depth: int) -> bool:
+    depth = 0
+    quoted = escaped = False
+    for byte in raw:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:
+                escaped = True
+            elif byte == 0x22:
+                quoted = False
+            continue
+        if byte == 0x22:
+            quoted = True
+        elif byte in (0x7B, 0x5B):
+            depth += 1
+            if depth > max_depth:
+                return False
+        elif byte in (0x7D, 0x5D):
+            depth -= 1
+    return True
+
+
+def read_json_with_size(target: Path, max_bytes: int, private: bool = True,
+                        max_depth: int = 8):
+    raw = read_bytes(target, max_bytes, private)
+    if not _json_depth_within(raw, max_depth):
+        raise ValueError(f"JSON exceeds {max_depth} level depth limit")
+
+    def reject_constant(value):
+        raise ValueError(f"invalid JSON numeric constant: {value}")
+
+    try:
+        return json.loads(raw.decode("utf-8"), parse_constant=reject_constant), len(raw)
+    except (UnicodeError, RecursionError, json.JSONDecodeError) as error:
+        raise ValueError("invalid JSON") from error
+
+
+def read_json(target: Path, max_bytes: int, private: bool = True,
+              max_depth: int = 8):
+    payload, _size = read_json_with_size(target, max_bytes, private, max_depth)
+    return payload
+
+
+def _bounded_names(descriptor: int, max_entries: int) -> list[str]:
+    names = []
+    with os.scandir(descriptor) as entries:
+        for entry in entries:
+            names.append(entry.name)
+            if len(names) > max_entries:
+                raise ValueError(f"directory exceeds {max_entries} entry limit")
+    return names
 
 
 def list_regular(directory: Path, max_entries: int) -> list[str]:
     descriptor = _open_directory(directory, private=True)
     try:
-        names = os.listdir(descriptor)
-        if len(names) > max_entries:
-            raise ValueError(f"directory exceeds {max_entries} entry limit")
+        names = _bounded_names(descriptor, max_entries)
         result = []
         for name in names:
             try:
@@ -182,18 +277,42 @@ def list_regular(directory: Path, max_entries: int) -> list[str]:
         os.close(descriptor)
 
 
-def harden_private_tree(directory: Path) -> None:
+def owned_regular_metadata(directory: Path, max_entries: int) -> list[tuple[str, os.stat_result]]:
+    """Return metadata from opened user-owned regular leaves in a trusted directory."""
+    descriptor = _open_directory(directory)
+    try:
+        result = []
+        for name in _bounded_names(descriptor, max_entries):
+            child = -1
+            try:
+                child = os.open(name, _FILE_FLAGS, dir_fd=descriptor)
+                info = os.fstat(child)
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                    raise PermissionError(f"untrusted regular-file entry: {directory / name}")
+                result.append((name, info))
+            finally:
+                if child >= 0:
+                    os.close(child)
+        return result
+    finally:
+        os.close(descriptor)
+
+
+def harden_private_tree(directory: Path, max_entries: int) -> None:
     descriptor = _open_directory(directory, create=True, private=True)
     try:
-        for name in os.listdir(descriptor):
+        for name in _bounded_names(descriptor, max_entries):
+            child = -1
             try:
                 child = os.open(name, _FILE_FLAGS, dir_fd=descriptor)
                 info = os.fstat(child)
                 if stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid():
                     os.fchmod(child, 0o600)
-                os.close(child)
             except OSError:
                 continue
+            finally:
+                if child >= 0:
+                    os.close(child)
     finally:
         os.close(descriptor)
 
@@ -220,19 +339,24 @@ def private_lock(target: Path):
         os.close(parent)
 
 
-def atomic_json_write(target: Path, payload, private: bool = True) -> None:
+def atomic_bytes_write(target: Path, encoded: bytes, private: bool = True,
+                       mode: int | None = None) -> None:
     parent = _open_directory(target.parent, create=True, private=private)
     temporary = f".{target.name}.{secrets.token_hex(8)}.tmp"
     descriptor = -1
     try:
+        create_mode = (0o600 if private else 0o644) if mode is None else mode & 0o777
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
-                             0o600 if private else 0o644, dir_fd=parent)
-        with os.fdopen(descriptor, "w") as handle:
-            descriptor = -1
-            json.dump(payload, handle, indent=2 if private else None)
-            handle.write("\n" if private else "")
-            handle.flush()
-            os.fsync(handle.fileno())
+                             create_mode, dir_fd=parent)
+        written = 0
+        while written < len(encoded):
+            count = os.write(descriptor, encoded[written:])
+            if count <= 0:
+                raise OSError(errno.EIO, "atomic write made no progress")
+            written += count
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
         os.replace(temporary, target.name, src_dir_fd=parent, dst_dir_fd=parent)
         os.fsync(parent)
     finally:
@@ -242,4 +366,119 @@ def atomic_json_write(target: Path, payload, private: bool = True) -> None:
             os.unlink(temporary, dir_fd=parent)
         except FileNotFoundError:
             pass
+        os.close(parent)
+
+
+def atomic_json_write(target: Path, payload, private: bool = True,
+                      max_bytes: int | None = None) -> None:
+    encoded = json.dumps(payload, indent=2 if private else None).encode("utf-8")
+    if private:
+        encoded += b"\n"
+    if max_bytes is not None and len(encoded) > max_bytes:
+        raise ValueError(f"JSON exceeds {max_bytes} byte limit")
+    atomic_bytes_write(target, encoded, private)
+
+
+def unlink_private(target: Path) -> None:
+    """Remove one user-owned regular file without following a mutable path."""
+    try:
+        parent = _open_directory(target.parent, private=True)
+    except FileNotFoundError:
+        return
+    try:
+        try:
+            info = os.stat(target.name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+            raise PermissionError(f"refusing to remove untrusted file: {target}")
+        os.unlink(target.name, dir_fd=parent)
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+
+
+def clear_private_directory(directory: Path, max_entries: int) -> int:
+    """Remove a bounded set of user-owned regular files from a private directory."""
+    try:
+        descriptor = _open_directory(directory, private=True)
+    except FileNotFoundError:
+        return 0
+    try:
+        names = _bounded_names(descriptor, max_entries)
+        for name in names:
+            info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                raise PermissionError(f"refusing to remove untrusted entry: {directory / name}")
+        for name in names:
+            os.unlink(name, dir_fd=descriptor)
+        if names:
+            os.fsync(descriptor)
+        return len(names)
+    finally:
+        os.close(descriptor)
+
+
+def remove_private_tree(directory: Path, max_entries: int = 20_000,
+                        max_depth: int = 16) -> int:
+    """Delete one bounded user-owned tree without following pathnames.
+
+    The complete tree is validated before the first unlink, so a special or
+    foreign-owned entry leaves the existing installation intact. Symlinks are
+    safe leaf entries: they are unlinked through their verified parent and are
+    never followed.
+    """
+    try:
+        parent = _open_directory(directory.parent)
+    except FileNotFoundError:
+        return 0
+    total = 0
+
+    def inspect(parent_fd: int, name: str, depth: int) -> None:
+        nonlocal total
+        if depth > max_depth:
+            raise ValueError(f"tree exceeds {max_depth} level depth limit")
+        info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        total += 1
+        if total > max_entries:
+            raise ValueError(f"tree exceeds {max_entries} entry limit")
+        if info.st_uid != os.geteuid():
+            raise PermissionError(f"refusing foreign-owned entry: {directory / name}")
+        if stat.S_ISDIR(info.st_mode):
+            child = os.open(name, _DIR_FLAGS, dir_fd=parent_fd)
+            try:
+                for child_name in _bounded_names(child, max_entries - total):
+                    inspect(child, child_name, depth + 1)
+            finally:
+                os.close(child)
+        elif not (stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)):
+            raise PermissionError(f"refusing special entry: {directory / name}")
+
+    def remove(parent_fd: int, name: str) -> None:
+        info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if info.st_uid != os.geteuid():
+            raise PermissionError(f"refusing changed entry: {directory / name}")
+        if stat.S_ISDIR(info.st_mode):
+            child = os.open(name, _DIR_FLAGS, dir_fd=parent_fd)
+            try:
+                for child_name in _bounded_names(child, max_entries):
+                    remove(child, child_name)
+                os.fsync(child)
+            finally:
+                os.close(child)
+            os.rmdir(name, dir_fd=parent_fd)
+        elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            os.unlink(name, dir_fd=parent_fd)
+        else:
+            raise PermissionError(f"refusing changed special entry: {directory / name}")
+
+    try:
+        try:
+            inspect(parent, directory.name, 0)
+        except FileNotFoundError:
+            return 0
+        remove(parent, directory.name)
+        os.fsync(parent)
+        return total
+    finally:
         os.close(parent)

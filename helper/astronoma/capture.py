@@ -11,34 +11,39 @@ alone, and marked `partial`. That backfill is what lets a machine show a
 useful history the first time Astronoma ever runs.
 """
 
+import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from . import history, pacmanlog, paths, updatelog, versions
 
+MAX_MIGRATION_MARKERS = 4096
 
-def _migrations_between(start: datetime, end: datetime) -> list[str]:
+
+def _migration_markers() -> list[tuple[str, datetime]]:
+    directory = paths.migrations_state_dir()
+    try:
+        entries = paths.owned_regular_metadata(directory, MAX_MIGRATION_MARKERS)
+    except FileNotFoundError:
+        return []
+    return [
+        (Path(name).stem, datetime.fromtimestamp(info.st_mtime).astimezone())
+        for name, info in entries
+    ]
+
+
+def _migrations_between(markers: list[tuple[str, datetime]],
+                        start: datetime, end: datetime) -> list[str]:
     """Migration markers Omarchy touched inside this update's window.
 
     The marker's mtime is the only record that a migration ran at a
     particular time, and it is what makes migrations recoverable for
     updates whose transcript is long gone.
     """
-    directory = paths.migrations_state_dir()
-    try:
-        entries = list(directory.iterdir())
-    except OSError:
-        return []
     window_start = start - timedelta(minutes=5)
     window_end = end + timedelta(minutes=30)
-    found = []
-    for entry in entries:
-        try:
-            touched = datetime.fromtimestamp(entry.stat().st_mtime).astimezone()
-        except OSError:
-            continue
-        if window_start <= touched <= window_end:
-            found.append(entry.stem)
+    found = [name for name, touched in markers if window_start <= touched <= window_end]
     return sorted(found)
 
 
@@ -54,9 +59,10 @@ def _is_update(session: pacmanlog.Session) -> bool:
     return session.omarchy_delta() != (None, None)
 
 
-def _record_from(session: pacmanlog.Session, log: updatelog.UpdateLog | None) -> dict:
+def _record_from(session: pacmanlog.Session, log: updatelog.UpdateLog | None,
+                 migration_markers: list[tuple[str, datetime]]) -> dict:
     from_version, to_version = session.omarchy_delta()
-    migrations = _migrations_between(session.started, session.finished)
+    migrations = _migrations_between(migration_markers, session.started, session.finished)
     if log and log.migrations:
         # The transcript names exactly what ran; prefer it over mtimes.
         migrations = sorted(set(migrations) | set(log.migrations))
@@ -117,19 +123,24 @@ def _log_matches(session: pacmanlog.Session, log: updatelog.UpdateLog) -> bool:
 
 @contextmanager
 def _capture_lock():
-    paths.harden_private_tree(paths.state_dir())
+    paths.harden_private_tree(paths.state_dir(), history.MAX_RECORDS + 8)
     with paths.private_lock(paths.state_dir() / ".capture.lock"):
         yield
 
 
 def _source_signature() -> dict:
     signature = {}
-    for name, source in (("pacman", paths.pacman_log()), ("update", paths.update_log())):
+    sources = (
+        ("pacman", paths.pacman_log(), (0, os.geteuid())),
+        ("update", paths.update_log(), (os.geteuid(),)),
+    )
+    for name, source, owners in sources:
         try:
-            stat = source.stat()
-            signature[name] = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
+            signature[name] = paths.trusted_leaf_identity(source, owners)
         except OSError:
-            signature[name] = None
+            # Distinct from a missing leaf, so an unsafe replacement cannot
+            # hit the unchanged fast path and hide its rejection.
+            signature[name] = "unsafe"
     return signature
 
 
@@ -143,24 +154,43 @@ def run_if_changed() -> dict:
         previous = None
     if previous == signature and history.any_records():
         return {"captured": [], "skipped": [], "unchanged": True}
-    result = run()
-    paths.atomic_json_write(stamp, signature, private=True)
+    result = run(include_source_signatures=True)
+    consumed_signature = result.pop("sourceSignatures", None)
+    if not result.get("error") and not result.get("warning"):
+        paths.atomic_json_write(stamp, consumed_signature, private=True)
     return result
 
 
-def run(force: bool = False) -> dict:
+def run(force: bool = False, include_source_signatures: bool = False) -> dict:
     """Capture every update the machine can still evidence.
 
     Returns a report of what was written, so the caller can tell the
     difference between "nothing to do" and "nothing readable".
     """
     with _capture_lock():
-        return _run_locked(force)
+        result = _run_locked(force)
+    if not include_source_signatures:
+        result.pop("sourceSignatures", None)
+    return result
 
 
 def _run_locked(force: bool = False) -> dict:
-    sessions = [s for s in pacmanlog.sessions() if _is_update(s)]
+    try:
+        all_sessions, pacman_signature = pacmanlog.sessions_with_identity()
+        sessions = [s for s in all_sessions if _is_update(s)]
+    except pacmanlog.PacmanLogError as error:
+        return {
+            "captured": [], "skipped": [], "sessions": 0,
+            "updateLogPresent": False, "updateLogAttached": False,
+            "error": str(error),
+        }
     log = updatelog.load()
+    migration_warning = str(log.error or "")
+    try:
+        migration_markers = _migration_markers()
+    except (OSError, ValueError) as error:
+        migration_markers = []
+        migration_warning = f"Migration history was not read safely: {error}"
     records = history.all_records()
     known = set() if force else {
         str(digest) for record in records
@@ -179,19 +209,27 @@ def _run_locked(force: bool = False) -> dict:
                 owner = session
                 break
 
-    captured, skipped = [], []
+    captured, skipped, pending = [], [], []
     for session in sessions:
         attached = log if session is owner else None
         identifier = history.record_id(session.started)
 
         if identifier in existing and not force:
-            # Re-record only when this run brings a transcript we have not
-            # already folded into the stored record.
-            if not attached or (attached.digest and attached.digest in known):
+            # An update may still be running at first capture. Re-record
+            # when package activity grows or new transcript evidence arrives.
+            previous = existing_records[identifier]
+            packages = {
+                "upgraded": [c.as_dict() for c in session.upgraded],
+                "installed": [c.as_dict() for c in session.installed],
+                "removed": [c.as_dict() for c in session.removed],
+            }
+            packages_unchanged = (previous.get("packages") == packages
+                                  and previous.get("finishedAt") == session.finished.isoformat())
+            if packages_unchanged and (not attached or (attached.digest and attached.digest in known)):
                 skipped.append(identifier)
                 continue
 
-        rebuilt = _record_from(session, attached)
+        rebuilt = _record_from(session, attached, migration_markers)
         previous = existing_records.get(identifier)
         if previous and not attached and not previous.get("partial", True):
             # Package history is reproducible, but a vanished transcript is
@@ -199,13 +237,25 @@ def _run_locked(force: bool = False) -> dict:
             for key in ("migrations", "warnings", "errors", "failed", "aurSkipped", "partial"):
                 rebuilt[key] = previous.get(key)
             rebuilt["sources"] = previous.get("sources", rebuilt["sources"])
-        history.save(rebuilt)
+        pending.append(rebuilt)
         captured.append(identifier)
 
-    return {
+    result = {
         "captured": captured,
         "skipped": skipped,
         "sessions": len(sessions),
         "updateLogPresent": log.present,
         "updateLogAttached": owner is not None,
+        "sourceSignatures": {
+            "pacman": pacman_signature,
+            "update": log.source_signature,
+        },
     }
+    if migration_warning:
+        result["warning"] = migration_warning[:200]
+    try:
+        history.save_all(pending)
+    except ValueError as error:
+        result["captured"] = []
+        result["error"] = f"Captured update exceeded storage limits: {error}"[:200]
+    return result

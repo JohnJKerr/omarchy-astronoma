@@ -36,8 +36,8 @@ Panel {
   // "unread" is the quieter option: the rocket appears when an update lands
   // and stands down once it has been read.
   readonly property bool shouldShow: {
-    if (!service.everLoaded) return false
     if (visibility === "always") return true
+    if (!service.everLoaded) return false
     return service.hasUnread
   }
 
@@ -50,9 +50,6 @@ Panel {
     ? Model.highlights(latest.crossed || [], 4)
     : Model.highlights(service.recentReleases, 4)
   readonly property string statusNote: Model.statusNote(service.releaseStatus)
-  readonly property bool hasSummary: !!(latest && latest.summary && latest.summary.text)
-  property bool confirmingAgentEnable: false
-  property string summaryError: ""
 
   function openFlightlog() {
     root.close()
@@ -61,6 +58,19 @@ Panel {
 
   function markRead() {
     if (service.hasUnread) service.markSeen(service.unreadId)
+  }
+
+  function scrollPanel(amount) {
+    var maximum = Math.max(0, flick.contentHeight - flick.height)
+    flick.contentY = Math.max(0, Math.min(maximum, flick.contentY + amount))
+  }
+
+  function scrollPanelLine(direction) {
+    scrollPanel(direction * Style.space(40))
+  }
+
+  function scrollPanelPage(direction) {
+    scrollPanel(direction * flick.height)
   }
 
   implicitWidth: shouldShow ? button.implicitWidth : 0
@@ -80,7 +90,6 @@ Panel {
     // Enough of each release to reach its first real section, but nowhere
     // near a whole release — the card only shows a few bullets.
     notesLimit: 4000
-    onLoaded: {}
   }
 
   Component.onCompleted: service.refresh(false)
@@ -139,7 +148,9 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
+    // Focus the scrolling child. PanelKeyCatcher still sees navigation first
+    // via Keys.BeforeItem, while unhandled Page Up/Down reach the Flickable.
+    focusTarget: flick
     contentWidth: panel.fittedContentWidth(Style.space(360))
     contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
 
@@ -148,6 +159,9 @@ Panel {
       anchors.fill: parent
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
+      onMoveRequested: function(dx, dy) {
+        if (dy !== 0) root.scrollPanelLine(dy)
+      }
       onActivateRequested: root.openFlightlog()
       onTextKey: function(character) {
         // No summarise shortcut on purpose: it costs a real agent run, so
@@ -166,6 +180,16 @@ Panel {
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        Keys.onPressed: function(event) {
+          if (event.key === Qt.Key_PageDown) {
+            root.scrollPanelPage(1)
+            event.accepted = true
+          } else if (event.key === Qt.Key_PageUp) {
+            root.scrollPanelPage(-1)
+            event.accepted = true
+          }
+        }
 
         Column {
           id: column
@@ -187,10 +211,21 @@ Panel {
             }
           }
 
+          Text {
+            visible: service.problem !== ""
+            width: parent.width
+            text: service.problem + ". Press R to retry."
+            textFormat: Text.PlainText
+            color: Color.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
           // Nothing captured yet: say so plainly, and let the recent
           // releases below carry the panel.
           Text {
-            visible: !root.latest
+            visible: !root.latest && service.problem === ""
             width: parent.width
             text: service.everLoaded
               ? "No update has been captured on this machine yet. Here is what changed in Omarchy recently."
@@ -291,62 +326,6 @@ Panel {
 
           PanelSeparator { foreground: root.foreground }
 
-          Text {
-            visible: root.summaryError !== ""
-            width: parent.width
-            text: root.summaryError
-            textFormat: Text.PlainText
-            color: Color.urgent
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-
-          // Present only when an agent is actually installed — the panel must
-          // not advertise something this machine cannot do — and only while
-          // pressing it would do something: produce a summary, or take the
-          // consent needed to. Once one exists, reading it is what the flight
-          // log button below already does, and a second button pointing at the
-          // same place is just a duplicate link.
-          Button {
-            id: summariseAction
-            visible: service.hasAgent && !!root.latest && !root.hasSummary
-            width: parent.width
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            text: service.summaryRunning
-              ? "Summarising…"
-              : (!service.agentSummariesEnabled
-                  ? (root.confirmingAgentEnable ? "Enable and summarise" : "Enable agent summaries")
-                  : "Summarise what changed for me")
-            enabled: !service.summaryRunning
-            function trigger() {
-              if (!visible || service.summaryRunning) return
-              root.summaryError = ""
-              if (!service.agentSummariesEnabled) {
-                if (!root.confirmingAgentEnable) {
-                  root.confirmingAgentEnable = true
-                  return
-                }
-                service.summarise(root.latest ? root.latest.id : "", false, true)
-                return
-              }
-              service.summarise(root.latest ? root.latest.id : "", false, false)
-            }
-            onClicked: trigger()
-          }
-
-          Text {
-            visible: root.confirmingAgentEnable && !service.agentSummariesEnabled
-            width: parent.width
-            text: "This sends the update record and GitHub release notes to your installed agent. Agent tools are disabled and it runs from an empty temporary directory."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            wrapMode: Text.WordWrap
-          }
-
           Button {
             width: parent.width
             foreground: root.foreground
@@ -359,21 +338,4 @@ Panel {
     }
   }
 
-  Connections {
-    target: service
-    function onSummaryFinished(payload) {
-      if (payload && payload.ok) {
-        // The card does not render summaries, so the flight log is where the
-        // thing just produced can actually be read.
-        root.confirmingAgentEnable = false
-        root.summaryError = ""
-        root.openFlightlog()
-      } else {
-        // Previously silent: a failed summarise closed nothing, showed
-        // nothing, and left the button looking untouched.
-        root.summaryError = payload && payload.error
-          ? payload.error : "The agent did not return a summary"
-      }
-    }
-  }
 }

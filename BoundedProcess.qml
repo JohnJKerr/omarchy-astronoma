@@ -7,7 +7,9 @@ Item {
 
   property int maxStdoutChars: 16 * 1024 * 1024
   property int maxStderrChars: 64 * 1024
-  property int deadlineMs: 30000
+  // The Python supervisor gets 30 seconds and then needs time to terminate
+  // its whole process group. Keep this outer deadline beyond that cleanup.
+  property int deadlineMs: 35000
   readonly property bool running: process.running
   property string stdoutText: ""
   property string stderrText: ""
