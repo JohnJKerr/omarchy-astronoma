@@ -5,6 +5,8 @@ import os
 import stat
 from pathlib import Path
 
+from . import paths
+
 
 MAX_MANIFEST_BYTES = 16 * 1024
 MAX_VERSION_CHARS = 32
@@ -21,19 +23,11 @@ def _read_version(manifest: Path) -> str:
                     or info.st_uid not in (0, os.geteuid())
                     or info.st_size > MAX_MANIFEST_BYTES):
                 return ""
-            chunks, total = [], 0
-            while True:
-                chunk = os.read(descriptor, min(4096, MAX_MANIFEST_BYTES + 1 - total))
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                total += len(chunk)
-                if total > MAX_MANIFEST_BYTES:
-                    return ""
+            raw = paths.read_descriptor(descriptor, MAX_MANIFEST_BYTES)
         finally:
             os.close(descriptor)
-        payload = json.loads(b"".join(chunks).decode("utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        payload = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, ValueError):
         return ""
 
     if not isinstance(payload, dict) or payload.get("schemaVersion") != 1:

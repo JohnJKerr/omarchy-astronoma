@@ -172,20 +172,13 @@ def load(path=None) -> UpdateLog:
     try:
         descriptor = os.open(log_path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
         info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+        if stat.S_ISREG(info.st_mode) and info.st_uid != os.geteuid():
+            return UpdateLog(present=False)
+        if not stat.S_ISREG(info.st_mode):
             raise PermissionError("update log is not a user-owned regular file")
         if info.st_size > MAX_LOG_BYTES:
             raise ValueError("update log is too large")
-        chunks, total = [], 0
-        while True:
-            chunk = os.read(descriptor, min(65536, MAX_LOG_BYTES + 1 - total))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_LOG_BYTES:
-                raise ValueError("update log is too large")
-        raw = b"".join(chunks)
+        raw = paths.read_descriptor(descriptor, MAX_LOG_BYTES)
         modified = datetime.fromtimestamp(info.st_mtime).astimezone()
     except FileNotFoundError:
         return UpdateLog(present=False)

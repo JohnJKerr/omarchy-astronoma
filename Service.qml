@@ -70,7 +70,6 @@ Item {
     var argv = [helper, "report"]
     if (refreshReleases) argv.push("--refresh")
     if (notesLimit > 0) { argv.push("--notes-limit"); argv.push(String(notesLimit)) }
-    argv.push("--pretty")
     reportProcess.start(argv)
   }
 
@@ -96,13 +95,12 @@ Item {
     if (refresh) argv.push("--refresh")
     if (enable) argv.push("--enable")
     if (agentKey) { argv.push("--agent"); argv.push(String(agentKey)) }
-    argv.push("--pretty")
     summaryProcess.start(argv)
   }
 
   function selectAgent(agentKey) {
     if (!agentKey || agentSelectionProcess.running) return
-    agentSelectionProcess.start([helper, "agent-summaries", "status", String(agentKey)])
+    agentSelectionProcess.start([helper, "agent-summaries", "select", String(agentKey)])
   }
 
   property bool summaryRunning: false

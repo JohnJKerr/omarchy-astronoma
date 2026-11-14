@@ -82,7 +82,7 @@ main() {
   validate_plugin_target
   if [[ -d $(dirname -- "$TARGET_DIR") ]]; then
     PYTHONPATH="$SOURCE_DIR/helper" python3 -c \
-      'import sys; from pathlib import Path; from astronoma import paths; paths.private_directory(Path(sys.argv[1]))' \
+      'import sys; from pathlib import Path; from astronoma import paths; paths.trusted_directory(Path(sys.argv[1]))' \
       "$(dirname -- "$TARGET_DIR")"
   fi
   if (( PURGE )); then
@@ -102,9 +102,6 @@ main() {
   if command -v omarchy >/dev/null; then
     omarchy plugin disable "$PLUGIN_ID" >/dev/null 2>&1 || true
   fi
-  remove_tree "$TARGET_DIR"
-  echo "Removed $TARGET_DIR"
-
   if (( PURGE )); then
     remove_tree "$STATE_DIR"
     remove_tree "$CACHE_DIR"
@@ -112,6 +109,9 @@ main() {
   else
     echo "Kept captured history in $STATE_DIR — re-run with --purge to delete it."
   fi
+
+  remove_tree "$TARGET_DIR"
+  echo "Removed $TARGET_DIR"
 
   if command -v omarchy-shell >/dev/null && omarchy-shell shell ping >/dev/null 2>&1; then
     omarchy-shell shell rescanPlugins >/dev/null || true

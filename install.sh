@@ -79,7 +79,7 @@ echo "Installing Astronoma to $TARGET_DIR"
 mkdir -p "$TARGET_PARENT"
 validate_target
 PYTHONPATH="$SOURCE_DIR/helper" python3 -c \
-  'import sys; from pathlib import Path; from astronoma import paths; paths.private_directory(Path(sys.argv[1]))' \
+  'import sys; from pathlib import Path; from astronoma import paths; paths.trusted_directory(Path(sys.argv[1]))' \
   "$TARGET_PARENT"
 
 # Build and validate a complete sibling before replacing the installed copy.

@@ -127,7 +127,7 @@ function highlights(releases, limit) {
     var lines = body.split("\n")
     var inSection = false
     for (var j = 0; j < lines.length && out.length < max; j++) {
-      var line = lines[j].replace(/^\s+|\s+$/g, "")
+      var line = lines[j].trim()
       if (/^#{2,}\s+/.test(line)) { inSection = true; continue }
       if (!inSection || !/^[*-]\s+/.test(line)) continue
       var text = line.replace(/^[*-]\s+/, "")
@@ -168,10 +168,10 @@ function cleanPlainText(text) {
 // badly in a narrow panel. Strip them before the remaining plain-text pass.
 function cleanReleaseBody(body) {
   var text = String(body || "")
-  text = text.replace(/\s+by\s+@([\w-]+)\s+in\s+(https:\/\/\S+|#\d+)/g, "")
+  text = text.replace(/\bby\s+@([\w-]+)\s+in\s+(https:\/\/\S+|#\d+)/g, "")
   text = text.replace(/\*\*Full Changelog\*\*:\s*\S+/g, "")
   text = cleanPlainText(text)
-  return text.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "")
+  return text.replace(/\n{3,}/g, "\n\n").trim()
 }
 
 function releaseHeading(release) {

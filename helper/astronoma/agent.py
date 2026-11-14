@@ -50,25 +50,9 @@ AGENTS = (
         "--disable-slash-commands",
         "--no-session-persistence",
     )),
-    Agent("codex", "Codex", "codex", (
-        "exec",
-        "--strict-config",
-        "--ignore-user-config",
-        "--ignore-rules",
-        "--ephemeral",
-        "--sandbox", "read-only",
-        "--skip-git-repo-check",
-        "--disable", "shell_tool",
-        "--disable", "hooks",
-        "--disable", "browser_use",
-        "--disable", "apps",
-        "--disable", "plugins",
-        "--disable", "skill_search",
-        "--disable", "view_image",
-        "--config", 'web_search="disabled"',
-    )),
 )
 
+# Codex is deliberately absent until a verifiable no-tools allowlist exists.
 # Gemini CLI is deliberately absent. Its non-interactive mode only gates the
 # tools that ask for approval; read-only tools — file reads, and `web_fetch`
 # and `google_web_search` in particular — run unprompted, which is a network
@@ -198,7 +182,7 @@ repetition.
 
 
 FENCE = "untrusted_update_data"
-_FENCE_TAG = re.compile(r"</?%s>" % re.escape(FENCE), re.I)
+_FENCE_TAG = re.compile(r"</?%s\s*>" % re.escape(FENCE), re.I)
 
 
 def _defuse(quoted: str) -> str:
@@ -413,14 +397,16 @@ def summarise(identifier: str, releases: list, key: str | None = None,
     if not chosen:
         return {"ok": False, "error": "No supported agent CLI is installed"}
 
-    argv = [chosen.command, *chosen.argv, prompt]
+    argv = [chosen.command, *chosen.argv]
     try:
-        # An empty working directory prevents project instruction/config files
-        # from being discovered. Claude's tools are explicitly disallowed;
-        # Codex ignores user config and rules and disables its tool features
-        # above, with strict validation making unknown controls fail closed.
+        # Keep private update evidence out of /proc/<pid>/cmdline. A file
+        # avoids pipe backpressure while the bounded runner drains output.
         with tempfile.TemporaryDirectory(prefix="astronoma-summary-") as workdir:
-            returncode, stdout, stderr = run_bounded(argv, workdir, timeout=TIMEOUT)
+            with tempfile.TemporaryFile() as prompt_input:
+                prompt_input.write(prompt.encode("utf-8"))
+                prompt_input.seek(0)
+                returncode, stdout, stderr = run_bounded(
+                    argv, workdir, timeout=TIMEOUT, stdin=prompt_input)
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": f"{chosen.name} timed out after {TIMEOUT}s"}
     except ValueError:
