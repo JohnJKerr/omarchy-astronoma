@@ -32,13 +32,10 @@ def _stop_group(process: subprocess.Popen, grace: float) -> None:
 def run_bounded(argv: list[str], workdir: str, timeout: float = 180,
                  stdout_limit: int = 256 * 1024,
                  stderr_limit: int = 64 * 1024,
-                 termination_grace: float = 2) -> tuple[int, bytes, bytes]:
+                 termination_grace: float = 2, stdin=None) -> tuple[int, bytes, bytes]:
     """Drain bounded output while the producer runs, with a process-group deadline."""
-    # QML's Process can leave stdin as an open pipe. Codex treats piped stdin
-    # as additional prompt input even when a positional prompt was supplied,
-    # so inheriting that descriptor makes it wait forever for EOF. These are
-    # deliberately non-interactive jobs: give every child an immediate EOF.
-    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+    # Default to EOF; callers may supply a private file for prompt input.
+    process = subprocess.Popen(argv, stdin=stdin if stdin is not None else subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                cwd=workdir, start_new_session=True)
 

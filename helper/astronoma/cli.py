@@ -35,6 +35,13 @@ def _emit(payload, pretty: bool) -> int:
 
 
 def main(argv=None) -> int:
+    try:
+        return _main(argv)
+    except OSError as error:
+        return _emit({"ok": False, "error": f"Filesystem operation failed: {error}"}, False)
+
+
+def _main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="astronoma",
         description="Flight log for Omarchy updates.",
@@ -83,7 +90,7 @@ def main(argv=None) -> int:
 
     consent_cmd = sub.add_parser("agent-summaries", parents=[common],
                                  help="inspect or revoke agent-summary consent")
-    consent_cmd.add_argument("state", choices=("status", "enable", "disable", "reset"),
+    consent_cmd.add_argument("state", choices=("status", "select", "enable", "disable", "reset"),
                              nargs="?", default="status")
     consent_cmd.add_argument("agent", nargs="?", help="installed agent key to select")
 
@@ -157,9 +164,13 @@ def main(argv=None) -> int:
             removed = agent.reset_first_run()
             return _emit({"ok": True, "enabled": False,
                           "selectedAgent": None, "summariesRemoved": removed}, pretty)
+        if args.state == "status" and args.agent:
+            return _emit({"ok": False, "error": "Use agent-summaries select to choose an agent"}, pretty)
+        if args.state == "select" and not args.agent:
+            return _emit({"ok": False, "error": "Select requires an agent"}, pretty)
         if args.agent and not agent.set_preferred(args.agent):
             return _emit({"ok": False, "error": "Selected agent is not available"}, pretty)
-        if args.state != "status":
+        if args.state in ("enable", "disable"):
             agent.set_enabled(args.state == "enable")
         return _emit({"ok": True, "enabled": agent.enabled(),
                       "selectedAgent": agent.selected()}, pretty)

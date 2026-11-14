@@ -12,6 +12,7 @@ useful history the first time Astronoma ever runs.
 """
 
 import os
+import stat
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -67,6 +68,9 @@ def _record_from(session: pacmanlog.Session, log: updatelog.UpdateLog | None,
         # The transcript names exactly what ran; prefer it over mtimes.
         migrations = sorted(set(migrations) | set(log.migrations))
 
+    warnings = list(log.warnings) if log else []
+    if session.truncated:
+        warnings = ["Package list truncated at the per-update limit", *warnings][:updatelog.MAX_MESSAGES]
     aur = [c.as_dict() for c in session.changes if c.aur]
     record = {
         "schema": history.SCHEMA,
@@ -85,13 +89,12 @@ def _record_from(session: pacmanlog.Session, log: updatelog.UpdateLog | None,
         },
         "aur": aur,
         "migrations": migrations,
-        "warnings": list(log.warnings) if log else [],
+        "warnings": warnings,
         "errors": list(log.errors) if log else [],
         "failed": bool(log.failed) if log else False,
         "aurSkipped": bool(log.aur_skipped) if log else False,
-        # `partial` means package data only: no transcript was available for
-        # this update, so migrations are inferred and errors are unknown.
-        "partial": log is None,
+        # A missing transcript or truncated package list leaves incomplete evidence.
+        "partial": log is None or session.truncated,
         "sources": {
             "pacmanLog": True,
             "updateLog": log is not None,
@@ -136,7 +139,13 @@ def _source_signature() -> dict:
     )
     for name, source, owners in sources:
         try:
-            signature[name] = paths.trusted_leaf_identity(source, owners)
+            info = os.stat(source, follow_symlinks=False)
+            if name == "update" and stat.S_ISREG(info.st_mode) and info.st_uid != os.geteuid():
+                signature[name] = None
+            else:
+                signature[name] = paths.trusted_leaf_identity(source, owners)
+        except FileNotFoundError:
+            signature[name] = None
         except OSError:
             # Distinct from a missing leaf, so an unsafe replacement cannot
             # hit the unchanged fast path and hide its rejection.
@@ -198,6 +207,14 @@ def _run_locked(force: bool = False) -> dict:
     }
     existing_records = {r.get("id"): r for r in records}
     existing = set(existing_records)
+    # Preserve legacy local-time IDs, read markers, and summary cache keys.
+    ids_by_start = {}
+    for record in records:
+        try:
+            started = datetime.fromisoformat(record["startedAt"])
+            ids_by_start[started] = record["id"]
+        except (KeyError, ValueError, TypeError):
+            continue
 
     # Attach the transcript to the update it actually dates to. Searching
     # newest first means an ambiguous match lands on the most recent run,
@@ -212,7 +229,7 @@ def _run_locked(force: bool = False) -> dict:
     captured, skipped, pending = [], [], []
     for session in sessions:
         attached = log if session is owner else None
-        identifier = history.record_id(session.started)
+        identifier = ids_by_start.get(session.started, history.record_id(session.started))
 
         if identifier in existing and not force:
             # An update may still be running at first capture. Re-record
@@ -230,6 +247,7 @@ def _run_locked(force: bool = False) -> dict:
                 continue
 
         rebuilt = _record_from(session, attached, migration_markers)
+        rebuilt["id"] = identifier
         previous = existing_records.get(identifier)
         if previous and not attached and not previous.get("partial", True):
             # Package history is reproducible, but a vanished transcript is

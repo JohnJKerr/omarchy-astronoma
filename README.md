@@ -52,7 +52,7 @@ draws the full view, and both simply render what the helper returns.
   lens over the same update, each showing `name  old → new`, with a filter
   for updates that moved a thousand packages.
 - **Errors and warnings surfaced**, never silently dropped.
-- **An optional agent summary.** If Claude Code or Codex is installed,
+- **An optional agent summary.** If Claude Code is installed,
   Astronoma can hand it the release notes plus your
   machine's package changes and ask what actually affects you.
 - **Offline-safe.** Release notes are cached; a failed refresh shows the
@@ -217,11 +217,9 @@ the agent. No configuration-file editing is required. Revoke consent with
 `bin/astronoma agent-summaries disable`.
 Release notes and local update evidence are treated as untrusted input, and
 are passed to the agent inside a quoted block whose delimiter the quoted text
-cannot close. Claude Code is launched with tools disabled. Codex runs
-ephemerally with its shell, hooks, plugins, browser, apps, skills, image
-tools, user configuration, and web search disabled; strict configuration
-validation makes unsupported controls fail closed. Both run from an empty
-temporary directory, which keeps project instruction files out of reach.
+cannot close. Claude Code is launched with tools disabled. Codex summaries are disabled until a verified no-tools mode is available.
+The agent runs from an empty temporary directory, which keeps project
+instruction files out of reach.
 Mutable state and cache files are opened below descriptor-verified,
 user-owned directories without following symlinks; reads also enforce byte,
 shape, cardinality, and string limits. Helper output is bounded before it
