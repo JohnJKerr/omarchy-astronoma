@@ -107,11 +107,6 @@ Panel {
     target: "astronoma.bar"
     function open(): void { root.open() }
     function close(): void { root.close() }
-    function closeIfOpen(): string {
-      if (!root.opened) return "inactive"
-      root.close()
-      return "closed"
-    }
     function toggle(): void { root.toggle() }
     function refresh(): string { service.refresh(true); return "ok" }
     function status(): string {
@@ -190,7 +185,6 @@ Panel {
 
         KeyBindings {
           id: cardBindings
-          KeyBinding { key: Qt.Key_W; modifiers: Qt.MetaModifier; onTriggered: root.close() }
           KeyBinding { key: Qt.Key_PageDown; onTriggered: root.scrollPanelPage(1) }
           KeyBinding { key: Qt.Key_PageUp; onTriggered: root.scrollPanelPage(-1) }
         }
