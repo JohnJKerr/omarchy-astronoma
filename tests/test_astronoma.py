@@ -1593,7 +1593,7 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("width: Style.space(64)", flightlog)
         self.assertIn("ReleasePlanet {", flightlog)
         self.assertIn("String(historyEntry.modelData.omarchy.to)", flightlog)
-        self.assertIn("enabled: historyPlanetSlot.hasRelease", flightlog)
+        self.assertIn("packagesOnly: !historyPlanetSlot.hasRelease", flightlog)
         self.assertIn("onClicked: root.launchToHistory(historyEntry.index)", flightlog)
 
     def test_release_hover_warms_rocket_before_pointer_launch(self):

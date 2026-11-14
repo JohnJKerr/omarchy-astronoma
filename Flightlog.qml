@@ -683,16 +683,15 @@ Item {
 
                           ReleasePlanet {
                             anchors.centerIn: parent
-                            visible: historyPlanetSlot.hasRelease
+                            packagesOnly: !historyPlanetSlot.hasRelease
                             release: ({
-                              version: visible
+                              version: historyPlanetSlot.hasRelease
                                 ? String(historyEntry.modelData.omarchy.to) : ""
                             })
                           }
 
                           MouseArea {
                             anchors.fill: parent
-                            enabled: historyPlanetSlot.hasRelease
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.launchToHistory(historyEntry.index)
