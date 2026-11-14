@@ -295,6 +295,18 @@ class PacmanLogTests(TempEnv):
 
 
 class UpdateLogTests(unittest.TestCase):
+    def test_explicit_warning_with_failure_text_is_not_an_error(self):
+        from astronoma import updatelog
+
+        # Arrange
+        transcript = "\x1b[33mwarning: failed to retrieve optional metadata\x1b[0m\n"
+        # Act
+        parsed = updatelog.parse(transcript)
+        # Assert
+        self.assertEqual((parsed.warnings, parsed.errors),
+                         (["warning: failed to retrieve optional metadata"], []))
+
+
     def test_parser_preserves_first_seen_order_with_constant_time_deduplication(self):
         from astronoma import updatelog
 
