@@ -6,6 +6,7 @@ Item {
   id: root
 
   property var release: null
+  property bool packagesOnly: false
   property real patchSize: Style.space(40)
   property real minorSize: Style.space(52)
   property real majorSize: Style.space(64)
@@ -21,8 +22,8 @@ Item {
   readonly property int spinFrameHeight: 320
 
   readonly property int kind: Model.planetKind(release)
-  readonly property real planetSize: [patchSize, minorSize, majorSize][kind]
-  readonly property bool spinActive: spinning
+  readonly property real planetSize: packagesOnly ? patchSize : [patchSize, minorSize, majorSize][kind]
+  readonly property bool spinActive: spinning && !packagesOnly
   readonly property string spinSource: [
     "assets/release-planet-patch-spinning.png",
     "assets/release-planet-minor-spinning.png",
@@ -38,7 +39,7 @@ Item {
     height: width
     visible: !root.spinActive
     source: "assets/release-planets.png"
-    sourceClipRect: Qt.rect(root.kind * 272, 0, 272, 320)
+    sourceClipRect: Qt.rect((root.packagesOnly ? 3 : root.kind) * 272, 0, 272, 320)
     fillMode: Image.PreserveAspectFit
     // The source art is 1-bit dithered at 272x320. Filter it when reducing it
     // to icon size so the sparse highlights do not disappear between pixels.

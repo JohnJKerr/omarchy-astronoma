@@ -373,32 +373,38 @@ Item {
         anchors.leftMargin: card.contentLeftInset
         focus: true
 
-        Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) {
-            if (root.showingReleaseCatalogue) {
-              root.showingUpcoming = false
-              root.showingEarlier = false
+        Keys.onPressed: function(event) { flightlogBindings.handle(event) }
+
+        KeyBindings {
+          id: flightlogBindings
+
+          KeyBinding { key: Qt.Key_W; modifiers: Qt.MetaModifier; onTriggered: root.close() }
+          KeyBinding {
+            key: Qt.Key_Escape
+            onTriggered: {
+              if (root.showingReleaseCatalogue) {
+                root.showingUpcoming = false
+                root.showingEarlier = false
+              } else root.close()
             }
-            else root.close()
-            event.accepted = true
           }
-          else if (event.key === Qt.Key_Down) { root.scrollDetailLine(1); event.accepted = true }
-          else if (event.key === Qt.Key_Up) { root.scrollDetailLine(-1); event.accepted = true }
-          else if (!root.showingReleaseCatalogue && event.key === Qt.Key_J) { root.moveSelection(1); event.accepted = true }
-          else if (!root.showingReleaseCatalogue && event.key === Qt.Key_K) { root.moveSelection(-1); event.accepted = true }
-          else if (event.key === Qt.Key_PageDown) { root.scrollDetailPage(1); event.accepted = true }
-          else if (event.key === Qt.Key_PageUp) { root.scrollDetailPage(-1); event.accepted = true }
-          else if (event.key === Qt.Key_Space) {
-            root.scrollDetailPage((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
-            event.accepted = true
+          KeyBinding { key: Qt.Key_Down; onTriggered: root.scrollDetailLine(1) }
+          KeyBinding { key: Qt.Key_Up; onTriggered: root.scrollDetailLine(-1) }
+          KeyBinding { key: Qt.Key_J; enabled: !root.showingReleaseCatalogue; onTriggered: root.moveSelection(1) }
+          KeyBinding { key: Qt.Key_K; enabled: !root.showingReleaseCatalogue; onTriggered: root.moveSelection(-1) }
+          KeyBinding { key: Qt.Key_PageDown; onTriggered: root.scrollDetailPage(1) }
+          KeyBinding { key: Qt.Key_PageUp; onTriggered: root.scrollDetailPage(-1) }
+          KeyBinding {
+            key: Qt.Key_Space
+            onTriggered: function(event) {
+              root.scrollDetailPage((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+            }
           }
-          else if (event.key === Qt.Key_Home) { root.scrollDetailToEnd(false); event.accepted = true }
-          else if (event.key === Qt.Key_End) { root.scrollDetailToEnd(true); event.accepted = true }
-          else if (event.key === Qt.Key_R) { root.refresh(); event.accepted = true }
-          else if (!root.showingReleaseCatalogue && event.key === Qt.Key_P) { root.showPackages(packageSection.group); event.accepted = true }
-          // Summarising deliberately has no single-key shortcut. This surface
-          // takes exclusive keyboard focus, so one stray key would otherwise
-          // spend an agent run the user never asked for.
+          KeyBinding { key: Qt.Key_Home; onTriggered: root.scrollDetailToEnd(false) }
+          KeyBinding { key: Qt.Key_End; onTriggered: root.scrollDetailToEnd(true) }
+          KeyBinding { key: Qt.Key_R; onTriggered: root.refresh() }
+          KeyBinding { key: Qt.Key_P; enabled: !root.showingReleaseCatalogue; onTriggered: root.showPackages(packageSection.group) }
+          // Summarising costs an agent run, so only the button can start it.
         }
 
         // ---------------------------------------------------- header
@@ -679,16 +685,15 @@ Item {
 
                           ReleasePlanet {
                             anchors.centerIn: parent
-                            visible: historyPlanetSlot.hasRelease
+                            packagesOnly: !historyPlanetSlot.hasRelease
                             release: ({
-                              version: visible
+                              version: historyPlanetSlot.hasRelease
                                 ? String(historyEntry.modelData.omarchy.to) : ""
                             })
                           }
 
                           MouseArea {
                             anchors.fill: parent
-                            enabled: historyPlanetSlot.hasRelease
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.launchToHistory(historyEntry.index)

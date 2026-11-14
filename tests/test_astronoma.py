@@ -301,6 +301,17 @@ class PacmanLogTests(TempEnv):
 
 
 class UpdateLogTests(unittest.TestCase):
+    def test_explicit_warning_with_failure_text_is_not_an_error(self):
+        from astronoma import updatelog
+
+        # Arrange
+        transcript = "\x1b[33mwarning: failed to retrieve optional metadata\x1b[0m\n"
+        # Act
+        parsed = updatelog.parse(transcript)
+        # Assert
+        self.assertEqual((parsed.warnings, parsed.errors),
+                         (["warning: failed to retrieve optional metadata"], []))
+
     def test_foreign_owned_transcript_is_absent_without_error(self):
         from astronoma import updatelog
         from unittest import mock
@@ -1651,7 +1662,7 @@ class SecurityBoundaryTests(TempEnv):
         self.assertIn("width: Style.space(64)", flightlog)
         self.assertIn("ReleasePlanet {", flightlog)
         self.assertIn("String(historyEntry.modelData.omarchy.to)", flightlog)
-        self.assertIn("enabled: historyPlanetSlot.hasRelease", flightlog)
+        self.assertIn("packagesOnly: !historyPlanetSlot.hasRelease", flightlog)
         self.assertIn("onClicked: root.launchToHistory(historyEntry.index)", flightlog)
 
     def test_release_hover_warms_rocket_before_pointer_launch(self):

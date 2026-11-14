@@ -85,6 +85,9 @@ def _classify(line: str) -> str | None:
     lowered = line.lower()
     if any(lowered.startswith(skip) or skip in lowered for skip in _IGNORE):
         return None
+    # An explicit severity wins over incidental words in the message.
+    if lowered.startswith(("warning:", "warn:")):
+        return "warning"
     if any(hint in lowered for hint in _ERROR_HINTS):
         return "error"
     if any(hint in lowered for hint in _WARNING_HINTS):

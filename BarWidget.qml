@@ -181,14 +181,13 @@ Panel {
         interactive: contentHeight > height
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-        Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_PageDown) {
-            root.scrollPanelPage(1)
-            event.accepted = true
-          } else if (event.key === Qt.Key_PageUp) {
-            root.scrollPanelPage(-1)
-            event.accepted = true
-          }
+        Keys.onPressed: function(event) { cardBindings.handle(event) }
+
+        KeyBindings {
+          id: cardBindings
+          KeyBinding { key: Qt.Key_W; modifiers: Qt.MetaModifier; onTriggered: root.close() }
+          KeyBinding { key: Qt.Key_PageDown; onTriggered: root.scrollPanelPage(1) }
+          KeyBinding { key: Qt.Key_PageUp; onTriggered: root.scrollPanelPage(-1) }
         }
 
         Column {
