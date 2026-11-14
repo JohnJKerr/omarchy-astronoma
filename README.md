@@ -172,38 +172,16 @@ once an update has been read. The flight log is still loaded and reachable:
 - **Bar icon**: left = summary card, right = full flight log, middle =
   refresh.
 - **Card**: `↑`/`↓` scroll, Page Up/Page Down scroll a whole page, `f` opens
-  the flight log, `r` refreshes, Esc closes; Super+W closes the window.
+  the flight log, `r` refreshes, Esc closes.
 - **Flight log and release pages**: `↑`/`↓` scroll, Page Up/Page Down scroll
   a whole page, `j`/`k` move through update history, `p` jumps to the package
-  breakdown, `r` refreshes, Esc closes; Super+W closes the window.
+  breakdown, `r` refreshes, Esc closes.
 - **IPC**: `omarchy-shell astronoma <open|close|toggle|refresh>` for the
   flight log, `omarchy-shell astronoma.bar <open|close|toggle|refresh|status>`
   for the card. These targets are why the manifest sets `keepLoaded`: a
   plugin that is only built on demand has no IPC handler registered until
   something has already opened it, which is the wrong way round for a
   keybinding.
-
-### Route Super+W through Astronoma
-
-Hyprland handles its close-window binding before QML receives Super+W.
-To close Astronoma first while keeping other desktop shortcuts available,
-add this override to `~/.config/hypr/bindings.lua`:
-
-```lua
-local astronoma_config = os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")
-o.rebind("SUPER + W", "Close window", o.shell_quote(astronoma_config ..
-  "/omarchy/plugins/io.github.johnjkerr.astronoma/bin/astronoma-close-window"))
-```
-
-Reload your Hyprland configuration after adding it. The installer supplies
-this command but does not edit your bindings. The wrapper closes the flight
-log or bar card if open; otherwise it invokes Omarchy's normal
-`hl.dsp.window.close()` action. IPC checks and closure happen in one shell
-call per surface, avoiding a separate status/close race. An IPC failure or
-unexpected response leaves the background window open and reports an error
-instead. This override requires Astronoma to be installed and enabled;
-remove it before disabling or uninstalling the plugin to restore the default
-close binding. Escape continues to work without this setup.
 
 Summarising has no keyboard shortcut on purpose. The flight log takes
 exclusive keyboard focus, and a summary costs a real agent run, so the

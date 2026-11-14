@@ -3,7 +3,7 @@ import QtQuick
 QtObject {
   property int key: 0
   // Required modifiers, rather than an exact match: existing navigation also
-  // accepts modified keys, and Super+W accepts additional held modifiers.
+  // accepts modified keys.
   property int modifiers: Qt.NoModifier
   property bool enabled: true
 
