@@ -57,16 +57,10 @@ def _read_bounded(log_path) -> tuple[str | None, list[int] | None]:
             raise PacmanLogError("Package history is not a trusted regular file")
         if info.st_size > MAX_LOG_BYTES:
             raise PacmanLogError("Package history exceeds the read limit")
-        chunks, total = [], 0
-        while True:
-            chunk = os.read(descriptor, min(65536, MAX_LOG_BYTES + 1 - total))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_LOG_BYTES:
-                raise PacmanLogError("Package history exceeds the read limit")
-        raw = b"".join(chunks)
+        try:
+            raw = paths.read_descriptor(descriptor, MAX_LOG_BYTES)
+        except ValueError as error:
+            raise PacmanLogError("Package history exceeds the read limit") from error
         identity = [info.st_dev, info.st_ino, len(raw), info.st_mtime_ns]
     finally:
         os.close(descriptor)
@@ -103,6 +97,7 @@ class Session:
     finished: datetime
     changes: list[PackageChange] = field(default_factory=list)
     commands: list[str] = field(default_factory=list)
+    truncated: bool = False
 
     @property
     def upgraded(self) -> list[PackageChange]:
@@ -145,7 +140,7 @@ def _looks_like_sysupgrade(command: str) -> bool:
 def _parse_timestamp(raw: str) -> datetime | None:
     try:
         parsed = datetime.fromisoformat(raw)
-        return parsed.astimezone() if parsed.tzinfo else parsed.astimezone()
+        return parsed if parsed.tzinfo else parsed.astimezone()
     except ValueError:
         pass
     # Pre-5.x pacman wrote [2019-01-01 12:00] with no timezone.
@@ -179,7 +174,6 @@ def read_with_identity(path=None) -> tuple[
     if text is None:
         return changes, commands, identity
     events = 0
-    action_counts = {"upgraded": 0, "installed": 0, "removed": 0}
     for line in text.splitlines():
         match = _ALPM.match(line)
         if match:
@@ -191,9 +185,6 @@ def read_with_identity(path=None) -> tuple[
             fields = (match.group("name"), before, after)
             if any(value is not None and len(value) > MAX_FIELD_CHARS for value in fields):
                 raise PacmanLogError("Package history contains an overlong package field")
-            action_counts[action] += 1
-            if action_counts[action] > MAX_CHANGES_PER_ACTION:
-                raise PacmanLogError(f"Package history contains too many {action} packages")
             changes.append(
                 PackageChange(
                     name=match.group("name"),
@@ -268,6 +259,15 @@ def sessions_with_identity(path=None, gap: timedelta = SESSION_GAP) -> tuple[
 
     command_times = [at for at, _cmd in commands]
     for session in grouped:
+        counts = {"upgraded": 0, "installed": 0, "removed": 0}
+        retained = []
+        for change in session.changes:
+            counts[change.action] += 1
+            if counts[change.action] <= MAX_CHANGES_PER_ACTION:
+                retained.append(change)
+            else:
+                session.truncated = True
+        session.changes = retained
         start = bisect_left(command_times, session.started - gap)
         end = bisect_right(command_times, session.finished + gap)
         session.commands = [cmd for _at, cmd in commands[start:end]]

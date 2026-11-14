@@ -101,6 +101,12 @@ def _open_directory(directory: Path, create: bool = False, private: bool = False
         raise
 
 
+def trusted_directory(directory: Path) -> None:
+    """Verify a shared parent without changing its permissions."""
+    descriptor = _open_directory(directory)
+    os.close(descriptor)
+
+
 def private_directory(directory: Path) -> None:
     descriptor = _open_directory(directory, create=True, private=True)
     os.close(descriptor)
@@ -124,20 +130,25 @@ def _open_regular(parent_fd: int, name: str, max_bytes: int, private: bool) -> i
         raise
 
 
+def read_descriptor(descriptor: int, max_bytes: int) -> bytes:
+    """Read through EOF, rejecting growth past the limit; caller owns the fd."""
+    chunks, total = [], 0
+    while True:
+        chunk = os.read(descriptor, min(65536, max_bytes + 1 - total))
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError(f"file exceeds {max_bytes} byte limit")
+
+
 def read_bytes(target: Path, max_bytes: int, private: bool = True) -> bytes:
     parent = _open_directory(target.parent, private=private)
     try:
         descriptor = _open_regular(parent, target.name, max_bytes, private)
         try:
-            chunks, total = [], 0
-            while True:
-                chunk = os.read(descriptor, min(65536, max_bytes + 1 - total))
-                if not chunk:
-                    return b"".join(chunks)
-                chunks.append(chunk)
-                total += len(chunk)
-                if total > max_bytes:
-                    raise ValueError(f"file exceeds {max_bytes} byte limit")
+            return read_descriptor(descriptor, max_bytes)
         finally:
             os.close(descriptor)
     finally:
@@ -154,15 +165,7 @@ def read_trusted_leaf(target: Path, max_bytes: int,
             raise PermissionError(f"untrusted regular file: {target}")
         if info.st_size > max_bytes:
             raise ValueError(f"file exceeds {max_bytes} byte limit")
-        chunks, total = [], 0
-        while True:
-            chunk = os.read(descriptor, min(65536, max_bytes + 1 - total))
-            if not chunk:
-                return b"".join(chunks)
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > max_bytes:
-                raise ValueError(f"file exceeds {max_bytes} byte limit")
+        return read_descriptor(descriptor, max_bytes)
     finally:
         os.close(descriptor)
 
@@ -176,15 +179,7 @@ def read_user_config(target: Path, max_bytes: int) -> tuple[bytes, int]:
             info = os.fstat(descriptor)
             if info.st_mode & 0o022:
                 raise PermissionError(f"config file is writable by other users: {target}")
-            chunks, total = [], 0
-            while True:
-                chunk = os.read(descriptor, min(65536, max_bytes + 1 - total))
-                if not chunk:
-                    return b"".join(chunks), stat.S_IMODE(info.st_mode)
-                chunks.append(chunk)
-                total += len(chunk)
-                if total > max_bytes:
-                    raise ValueError(f"file exceeds {max_bytes} byte limit")
+            return read_descriptor(descriptor, max_bytes), stat.S_IMODE(info.st_mode)
         finally:
             os.close(descriptor)
     finally:
