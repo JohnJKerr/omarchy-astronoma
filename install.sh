@@ -121,7 +121,7 @@ for required in manifest.json BarWidget.qml Flightlog.qml Model.js bin/astronoma
 done
 python3 -m json.tool "$STAGING_DIR/manifest.json" >/dev/null
 chmod +x "$STAGING_DIR/bin/astronoma" "$STAGING_DIR/bin/astronoma-supervisor" \
-         "$STAGING_DIR/bin/astronoma-menu-entry"
+         "$STAGING_DIR/bin/astronoma-menu-entry" "$STAGING_DIR/bin/astronoma-close-window"
 if [[ -f $STAGING_DIR/uninstall.sh ]]; then
   chmod +x "$STAGING_DIR/uninstall.sh"
 fi

@@ -183,6 +183,28 @@ once an update has been read. The flight log is still loaded and reachable:
   something has already opened it, which is the wrong way round for a
   keybinding.
 
+### Route Super+W through Astronoma
+
+Hyprland handles its close-window binding before QML receives Super+W.
+To close Astronoma first while keeping other desktop shortcuts available,
+add this override to `~/.config/hypr/bindings.lua`:
+
+```lua
+local astronoma_config = os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")
+o.rebind("SUPER + W", "Close window", o.shell_quote(astronoma_config ..
+  "/omarchy/plugins/io.github.johnjkerr.astronoma/bin/astronoma-close-window"))
+```
+
+Reload your Hyprland configuration after adding it. The installer supplies
+this command but does not edit your bindings. The wrapper closes the flight
+log or bar card if open; otherwise it invokes Omarchy's normal
+`hl.dsp.window.close()` action. IPC checks and closure happen in one shell
+call per surface, avoiding a separate status/close race. An IPC failure or
+unexpected response leaves the background window open and reports an error
+instead. This override requires Astronoma to be installed and enabled;
+remove it before disabling or uninstalling the plugin to restore the default
+close binding. Escape continues to work without this setup.
+
 Summarising has no keyboard shortcut on purpose. The flight log takes
 exclusive keyboard focus, and a summary costs a real agent run, so the
 button is the only way to start one.

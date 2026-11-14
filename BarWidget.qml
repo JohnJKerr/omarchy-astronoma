@@ -107,6 +107,11 @@ Panel {
     target: "astronoma.bar"
     function open(): void { root.open() }
     function close(): void { root.close() }
+    function closeIfOpen(): string {
+      if (!root.opened) return "inactive"
+      root.close()
+      return "closed"
+    }
     function toggle(): void { root.toggle() }
     function refresh(): string { service.refresh(true); return "ok" }
     function status(): string {
