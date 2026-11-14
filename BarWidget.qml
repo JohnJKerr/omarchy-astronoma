@@ -182,7 +182,10 @@ Panel {
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
         Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_PageDown) {
+          if (event.key === Qt.Key_W && (event.modifiers & Qt.MetaModifier)) {
+            root.close()
+            event.accepted = true
+          } else if (event.key === Qt.Key_PageDown) {
             root.scrollPanelPage(1)
             event.accepted = true
           } else if (event.key === Qt.Key_PageUp) {

@@ -374,7 +374,11 @@ Item {
         focus: true
 
         Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape) {
+          if (event.key === Qt.Key_W && (event.modifiers & Qt.MetaModifier)) {
+            root.close()
+            event.accepted = true
+          }
+          else if (event.key === Qt.Key_Escape) {
             if (root.showingReleaseCatalogue) {
               root.showingUpcoming = false
               root.showingEarlier = false
